@@ -17,19 +17,19 @@ from selector_registry import get_selector_class, add_selector_cli_args, collect
 MODEL_MAPPING = {
     "claude-3.7-sonnet": {
         "model": "claude-3-7-sonnet-20250219",
-        "provider": "wenwen"
+        "provider": "openai"
     },
     "claude-3.5-sonnet": {
         "model": "claude-3-5-sonnet-20241022", 
-        "provider": "wenwen"
+        "provider": "openai"
     },
     "gpt-4": {
         "model": "gpt-4-0613",
-        "provider": "wenwen"
+        "provider": "openai"
     },
     "gpt-4o": {
         "model": "gpt-4o",
-        "provider": "wenwen"
+        "provider": "openai"
     },
     # "gpt-oss-120b": {
     #     "model": "gpt-oss-120b",
@@ -37,7 +37,7 @@ MODEL_MAPPING = {
     # },
     "gpt-3.5-turbo": {
         "model": "gpt-3.5-turbo",
-        "provider": "wenwen"
+        "provider": "openai"
     },
     "llama-3-8b-instruct": {
         "model": "llama-3-8b-instruct",
@@ -60,7 +60,7 @@ MODEL_MAPPING = {
     },
     "gpt-5.1": {
         "model": "gpt-5.1",
-        "provider": "wenwen",
+        "provider": "openai",
     },
 }
 
@@ -73,7 +73,7 @@ def get_model_info(user_model_name: str) -> Dict[str, str]:
         print(f"⚠️  Unknown model '{user_model_name}', using default mapping")
         return {
             "model": user_model_name,
-            "provider": "wenwen"
+            "provider": "openai"
         }
 
 def load_asr_data(asr_file_path: str) -> Tuple[List[str], List[dict], List[List[float]]]:

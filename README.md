@@ -98,7 +98,7 @@ python src/jbfoundry/runners/universal_attack.py --list_attacks
 # Run with defense
 python src/jbfoundry/runners/universal_attack.py \
     --attack_name pair_gen \
-    --defense smoothllm \
+    --defense smooth_llm_gen \
     --model gpt-4o \
     --provider openai
 ```
@@ -206,6 +206,49 @@ See [`agents/README.md`](agents/README.md) for detailed workflow documentation.
 
 **Reproducible Results**: Structured artifacts (configs, costs, traces) enable reruns and longitudinal tracking.
 
+### Attack Selector
+
+**Adaptive Attack Selection**: Intelligent attack ordering system that maximizes jailbreak success while minimizing attempts and cost through pluggable selection policies.
+
+**Selection Policies**:
+- **ASR-Sort**: Ranks attacks by historical success rate for each victim model
+- **Cost-Aware ASR**: Balances attack effectiveness with token cost using Rank-Centrality scoring
+- **Thompson Sampling**: Beta-Bernoulli bandit algorithm that adapts based on real-time success/failure
+- **LLM-Guided**: Uses GPT-4o to rank attacks based on query context, victim model, and empirical data
+
+**Key Features**:
+- **Query-Aware Selection**: Selects optimal attack sequence per query and victim model
+- **Early Stopping**: Terminates on first successful attack, reducing unnecessary API calls
+- **Parallel Execution**: Configurable attack and query concurrency for faster evaluation
+- **Performance Tracking**: Comprehensive metrics including Success@K, average attempts, token costs
+
+**Example Usage**:
+```bash
+# Run ASR-sorted attack selection on sample queries
+python tools/attack_selector/attack_selector.py \
+    --queries_file tools/attack_selector/samples/jbb_sample_queries.json \
+    --selector asr_sort \
+    --attack_concurrency 3 \
+    --max_attacks 10
+
+# Use Thompson Sampling with custom parameters
+python tools/attack_selector/attack_selector.py \
+    --selector ts \
+    --ts_prior_weight 0.25 \
+    --attack_concurrency 2 \
+    --query_concurrency 4
+
+# LLM-guided selection with GPT-4o
+python tools/attack_selector/attack_selector.py \
+    --selector llm_select \
+    --llm_select_model gpt-4o \
+    --llm_select_provider openai
+```
+
+**Performance**: On JBB queries, all policies achieve 93.75% success rate with 1.7-2.5 average attempts per query. LLM-guided selection achieves 81.25% success on challenging GPT-OSS-120B victim (vs 68.75% for ASR-sort).
+
+See [Attack Selector Usage](tools/attack_selector/ATTACK_SELECTOR_USAGE.md) for detailed documentation and [Selector Comparison](tools/attack_selector/ATTACK_SELECTOR_COMPARISON.md) for benchmark results.
+
 ## Supported Models
 
 | Provider | Models | Configuration |
@@ -258,6 +301,10 @@ See [arXiv paper](https://arxiv.org/pdf/2602.24009) for complete reproduction me
 ### Agent System
 - **[Agents README](agents/README.md)** - Multi-agent workflow overview
 - **[Paper Preprocessor](agents/utils/README.md)** - PDF to markdown conversion utilities
+
+### Attack Selector
+- **[Attack Selector Usage](tools/attack_selector/ATTACK_SELECTOR_USAGE.md)** - Adaptive attack selection system
+- **[Selector Comparison](tools/attack_selector/ATTACK_SELECTOR_COMPARISON.md)** - Performance benchmarks and policy evaluation
 
 ### Quick Help
 ```bash

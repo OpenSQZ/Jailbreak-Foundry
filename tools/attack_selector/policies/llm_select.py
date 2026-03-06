@@ -28,7 +28,7 @@ LOGGER = logging.getLogger(__name__)
 
 class LLMSortSelector(AttackSelector):
     """
-    Attack selector that asks an LLM (default: wenwen/gpt-4o) to rank attack
+    Attack selector that asks an LLM (default: openai/gpt-4o) to rank attack
     templates given the user query, victim model, and historical attack metadata.
     """
 
@@ -83,8 +83,8 @@ class LLMSortSelector(AttackSelector):
         )
         self.defense_hint = self.DEFAULT_DEFENSE_HINT if opts.get("defense") else ""
         self.llm_model = opts.get("llm_select_model", "gpt-4o")
-        self.llm_provider = opts.get("llm_select_provider", "wenwen")
-        self.llm_api_key = opts.get("llm_select_api_key") or os.getenv("WENWEN_API_KEY")
+        self.llm_provider = opts.get("llm_select_provider", "openai")
+        self.llm_api_key = opts.get("llm_select_api_key") or os.getenv("OPENAI_API_KEY")
         self.llm_api_base = opts.get("llm_select_api_base")
         self.temperature = float(opts.get("llm_select_temperature", 0.2))
         self.max_tokens = int(opts.get("llm_select_max_tokens", 750))
@@ -109,7 +109,7 @@ class LLMSortSelector(AttackSelector):
             raise RuntimeError("LLMLiteLLM is required for llm_select; install litellm dependencies before using this selector.")
 
         if not self.llm_api_key:
-            raise RuntimeError("llm_select requires WENWEN_API_KEY or --llm_select_api_key; fallback ordering is disabled.")
+            raise RuntimeError("llm_select requires OPENAI_API_KEY or --llm_select_api_key; fallback ordering is disabled.")
 
     # ------------------------------------------------------------------ #
     # AttackSelector API
@@ -166,13 +166,13 @@ class LLMSortSelector(AttackSelector):
         parser.add_argument(
             "--llm_select_provider",
             type=str,
-            default="wenwen",
-            help="LLM provider passed to LLMLiteLLM (default: wenwen).",
+            default="openai",
+            help="LLM provider passed to LLMLiteLLM (default: openai).",
         )
         parser.add_argument(
             "--llm_select_api_key",
             type=str,
-            help="Optional API key override for the ranking LLM. Defaults to WENWEN_API_KEY env var.",
+            help="Optional API key override for the ranking LLM. Defaults to OPENAI_API_KEY env var.",
         )
         parser.add_argument(
             "--llm_select_api_base",

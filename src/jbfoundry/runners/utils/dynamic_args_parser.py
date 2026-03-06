@@ -74,8 +74,6 @@ class DynamicArgumentParser:
         defense_group = parser.add_argument_group("Defense Configuration")
         defense_group.add_argument("--defense", type=str, default=None,
                                   help="Defense mechanism to apply")
-        defense_group.add_argument("--paraphrase_model", type=str, default="gpt-3.5-turbo",
-                                  help="Model for paraphrase defense")
         
         # Evaluation configuration
         eval_group = parser.add_argument_group("Evaluation Configuration")

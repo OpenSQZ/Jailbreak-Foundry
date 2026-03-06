@@ -212,8 +212,8 @@ This approach maximizes efficiency while respecting concurrency limits and provi
 | `--llm_select_victim_description_file` | `tools/attack_selector/empirical_data/victim_model_descriptions.json` | llm_select | Victim model hints |
 | `--llm_select_empirical_asr_file` | `tools/attack_selector/empirical_data/empirical_asr_advbench_cost_jbb.json` | llm_select | Empirical ASR/cost for ranking hints |
 | `--llm_select_model` | `gpt-4o` | llm_select | Ranking LLM model |
-| `--llm_select_provider` | `wenwen` | llm_select | Ranking LLM provider |
-| `--llm_select_api_key` | env `WENWEN_API_KEY` | llm_select | API key override for ranking LLM |
+| `--llm_select_provider` | `openai` | llm_select | Ranking LLM provider |
+| `--llm_select_api_key` | env `OPENAI_API_KEY` | llm_select | API key override for ranking LLM |
 | `--llm_select_api_base` | None | llm_select | API base override for ranking LLM |
 | `--llm_select_temperature` | `0.2` | llm_select | Ranking LLM temperature |
 | `--llm_select_max_tokens` | `750` | llm_select | Max tokens for ranking response |

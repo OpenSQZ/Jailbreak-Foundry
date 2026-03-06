@@ -560,9 +560,9 @@ From standardized evaluation of 30 attacks × 10 models:
 Test attack robustness with defenses:
 
 ```bash
---defense smoothllm    # SmoothLLM perturbation defense
---defense paraphrase   # Paraphrase input before processing
---defense perplexity   # Filter high-perplexity inputs
+--defense smooth_llm_gen       # SmoothLLM perturbation defense
+--defense semantic_smooth_gen  # Semantic smoothing defense
+--defense backtranslation_gen  # Backtranslation defense
 ```
 
 ### Defense Interface
@@ -587,7 +587,7 @@ class MyDefense(BaseDefense):
 ```bash
 python src/jbfoundry/runners/universal_attack.py \
     --attack_name pair_gen \
-    --defense smoothllm \
+    --defense smooth_llm_gen \
     --model gpt-4o \
     --samples 20
 ```
