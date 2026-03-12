@@ -204,7 +204,7 @@ See [`agents/README.md`](agents/README.md) for detailed workflow documentation.
 - **Blind Spots**: GPT-OSS-120B has mean 9.13% ASR but fails at 82% on MOUSETRAP
 - **Format Sensitivity**: Formal wrappers (66.0% mean ASR) outperform linguistic reframing (39.3%)
 
-**Reproducible Results**: Structured artifacts (configs, costs, traces) enable reruns and longitudinal tracking.
+**Reproducible Results**: Structured artifacts (configs, costs, traces) enable reruns and longitudinal tracking. 
 
 ### Attack Selector
 
