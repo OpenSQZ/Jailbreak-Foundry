@@ -179,6 +179,10 @@ python agents/run_paper_to_attack.py \
 
 See [`agents/README.md`](agents/README.md) for detailed workflow documentation.
 
+### Automated Attack Discovery
+
+JBF includes an automated pipeline that continuously monitors and integrates new jailbreak research. Update reports with attack success rates and integration logs can be found in the [`attack_update_report/`](attack_update_report/) directory.
+
 ## Key Features
 
 ### Multi-Agent Paper Translation
