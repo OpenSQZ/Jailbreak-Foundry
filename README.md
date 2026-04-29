@@ -413,6 +413,14 @@ This work improves the reproducibility and timeliness of LLM jailbreak evaluatio
 
 Users are responsible for ensuring compliance with applicable laws, regulations, and ethical guidelines.
 
----
-
 **For more details, see the [arXiv paper](https://arxiv.org/pdf/2602.24009)**
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=opensqz%2Fjailbreak-foundry&type=date&logscale=&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=opensqz/jailbreak-foundry&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=opensqz/jailbreak-foundry&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=opensqz/jailbreak-foundry&type=date&legend=top-left" />
+ </picture>
+</a>
