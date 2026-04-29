@@ -47,7 +47,7 @@ JBF 由三大核心组件构成：
 - JBF-FORGE：把论文转化为可运行的模块
 - JBF-EVAL：标准化基准测试
 
-![JBF architecture diagram](jbf_architecture.jpg)
+![JBF architecture diagram](images/jbf_architecture.jpg)
 
 ### 1. JBF-LIB：统一框架核心
 
