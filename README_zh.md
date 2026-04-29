@@ -428,3 +428,13 @@ python agents/run_paper_to_attack.py --arxiv_id <PAPER_ID>
 用户需自行确保符合法律法规与伦理规范。
 
 更多信息，查看 [arXiv paper](https://arxiv.org/pdf/2602.24009)
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=opensqz%2Fjailbreak-foundry&type=date&logscale=&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=opensqz/jailbreak-foundry&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=opensqz/jailbreak-foundry&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=opensqz/jailbreak-foundry&type=date&legend=top-left" />
+ </picture>
+</a>
