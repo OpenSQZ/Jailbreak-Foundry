@@ -6,6 +6,8 @@
 
 **从论文到可运行攻击，用于可复现的基准测试**
 
+Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
+
 将越狱研究论文自动转化为可执行攻击模块，并在统一框架下完成标准化评测，<br>构建随研究前沿持续演进的**活体基准**。
 
 [![Paper](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
@@ -18,6 +20,10 @@
 <div align="center">
     <a href="README.md">English</a> | <a href="README_zh.md">中文</a>
 </div>
+
+## 最新动态
+
+- **2026 年 5 月**：Jailbreak Foundry 被 **ICML 2026 Spotlight** 接收；在 23,918 篇进入审稿的投稿中，共 536 篇获评 Spotlight（前 2.2%）。
 
 ## 概览
 
@@ -400,12 +406,14 @@ python agents/run_paper_to_attack.py --arxiv_id <PAPER_ID>
 如果你在研究中使用 Jailbreak Foundry，请引用：
 
 ```bibtex
-@article{jailbreakfoundry2026,
-  title={Jailbreak Foundry: From Papers to Runnable Attacks for Reproducible Benchmarking},
-  author={[Authors]},
-  journal={arXiv preprint arXiv:2602.24009},
+@misc{fang2026jailbreakfoundrypapersrunnable,
+  title={Jailbreak Foundry: From Papers to Runnable Attacks for Reproducible Benchmarking}, 
+  author={Zhicheng Fang and Jingjie Zheng and Chenxu Fu and Wei Xu},
   year={2026},
-  url={https://arxiv.org/pdf/2602.24009}
+  eprint={2602.24009},
+  archivePrefix={arXiv},
+  primaryClass={cs.CR},
+  url={https://arxiv.org/abs/2602.24009}
 }
 ```
 

@@ -6,6 +6,8 @@
 
 **From Papers to Runnable Attacks for Reproducible Benchmarking**
 
+Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
+
 A system that translates jailbreak research papers into executable attack modules and evaluates them under a unified harness, enabling living benchmarks that evolve with the research frontier.
 
 [![Paper](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
@@ -18,6 +20,10 @@ A system that translates jailbreak research papers into executable attack module
     <a href="README.md">English</a> | <a href="README_zh.md">中文</a>
 </div>
 
+
+## News
+
+- **May 2026**: Jailbreak Foundry was accepted as a **Spotlight paper at ICML 2026**, selected among 536 spotlight papers from 23,918 reviewed submissions (top 2.2%).
 
 ## Overview
 
@@ -388,12 +394,14 @@ Contributions are welcome! The flattened architecture makes extension straightfo
 If you use Jailbreak Foundry in your research, please cite:
 
 ```bibtex
-@article{jailbreakfoundry2026,
-  title={Jailbreak Foundry: From Papers to Runnable Attacks for Reproducible Benchmarking},
-  author={[Authors]},
-  journal={arXiv preprint arXiv:2602.24009},
+@misc{fang2026jailbreakfoundrypapersrunnable,
+  title={Jailbreak Foundry: From Papers to Runnable Attacks for Reproducible Benchmarking}, 
+  author={Zhicheng Fang and Jingjie Zheng and Chenxu Fu and Wei Xu},
   year={2026},
-  url={https://arxiv.org/pdf/2602.24009}
+  eprint={2602.24009},
+  archivePrefix={arXiv},
+  primaryClass={cs.CR},
+  url={https://arxiv.org/abs/2602.24009}
 }
 ```
 
