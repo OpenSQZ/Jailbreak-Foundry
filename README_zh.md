@@ -11,6 +11,7 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 将越狱研究论文自动转化为可执行攻击模块，并在统一框架下完成标准化评测，<br>构建随研究前沿持续演进的**活体基准**。
 
 [![Paper](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
+[![排行榜](https://img.shields.io/badge/JBF-%E6%8E%92%E8%A1%8C%E6%A6%9C-blue.svg)](https://jbf.sqz.ac.cn/leaderboard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![攻击实时更新](https://img.shields.io/badge/攻击-实时更新-orange)](attack_update_report/)
@@ -24,6 +25,10 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 ## 最新动态
 
 - **2026 年 5 月**：Jailbreak Foundry 被 **ICML 2026 Spotlight** 接收；在 23,918 篇进入审稿的投稿中，共 536 篇获评 Spotlight（前 2.2%）。
+
+## 在线排行榜
+
+你可以在 **[JBF 排行榜](https://jbf.sqz.ac.cn/leaderboard)** 查看已复现攻击的结果，并比较不同受测模型上的 ASR。
 
 ## 概览
 

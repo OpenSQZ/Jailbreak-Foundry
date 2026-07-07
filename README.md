@@ -11,6 +11,7 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 A system that translates jailbreak research papers into executable attack modules and evaluates them under a unified harness, enabling living benchmarks that evolve with the research frontier.
 
 [![Paper](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
+[![Leaderboard](https://img.shields.io/badge/JBF-Leaderboard-blue.svg)](https://jbf.sqz.ac.cn/leaderboard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![Live ASR Report](https://img.shields.io/badge/Attack-Biweekly_Update-orange)](attack_update_report/)
@@ -24,6 +25,10 @@ A system that translates jailbreak research papers into executable attack module
 ## News
 
 - **May 2026**: Jailbreak Foundry was accepted as a **Spotlight paper at ICML 2026**, selected among 536 spotlight papers from 23,918 reviewed submissions (top 2.2%).
+
+## Online Leaderboard
+
+Explore reproduced attack results and compare ASR across victim models on the **[JBF Leaderboard](https://jbf.sqz.ac.cn/leaderboard)**.
 
 ## Overview
 
