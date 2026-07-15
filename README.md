@@ -24,7 +24,7 @@ A system that translates jailbreak research papers into executable attack module
 
 ## News
 
-- **July 2026**: Jailbreak Foundry was selected for an **[Oral presentation at ICML 2026](https://icml.cc/virtual/2026/oral/71103)**.
+- **May 2026**: Jailbreak Foundry was selected for an **[Oral presentation at ICML 2026](https://icml.cc/virtual/2026/oral/71103)**; only 159 main-track papers received oral slots from 23,918 reviewed submissions (top 0.7%; 168 orals across all tracks).
 
 - **May 2026**: Jailbreak Foundry was accepted as a **Spotlight paper at ICML 2026**, selected among 536 spotlight papers from 23,918 reviewed submissions (top 2.2%).
 

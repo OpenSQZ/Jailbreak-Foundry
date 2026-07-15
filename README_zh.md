@@ -24,6 +24,8 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 
 ## 最新动态
 
+- **2026 年 5 月**：Jailbreak Foundry 入选 **[ICML 2026 Oral](https://icml.cc/virtual/2026/oral/71103)**；在 23,918 篇进入审稿的主赛道投稿中，仅 159 篇获得 Oral 席位（前 0.7%；全部赛道共 168 篇 Oral）。
+
 - **2026 年 5 月**：Jailbreak Foundry 被 **ICML 2026 Spotlight** 接收；在 23,918 篇进入审稿的投稿中，共 536 篇获评 Spotlight（前 2.2%）。
 
 ## 在线排行榜
