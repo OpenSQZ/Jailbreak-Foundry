@@ -398,17 +398,22 @@ Contributions are welcome! The flattened architecture makes extension straightfo
 
 ## Citation
 
-If you use Jailbreak Foundry in your research, please cite:
+If you use Jailbreak Foundry in your research, please cite our [ICML 2026 paper](https://proceedings.mlr.press/v306/fang26y.html):
 
 ```bibtex
-@misc{fang2026jailbreakfoundrypapersrunnable,
-  title={Jailbreak Foundry: From Papers to Runnable Attacks for Reproducible Benchmarking}, 
-  author={Zhicheng Fang and Jingjie Zheng and Chenxu Fu and Wei Xu},
-  year={2026},
-  eprint={2602.24009},
-  archivePrefix={arXiv},
-  primaryClass={cs.CR},
-  url={https://arxiv.org/abs/2602.24009}
+@InProceedings{pmlr-v306-fang26y,
+  title = {{Jailbreak Foundry}: From Papers to Runnable Attacks for Reproducible Benchmarking},
+  author = {Fang, Zhicheng and Zheng, Jingjie and Fu, Chenxu and Xu, Wei},
+  booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
+  pages = {29548--29590},
+  year = {2026},
+  editor = {Zhang, Tong and Dudik, Miroslav and Jaggi, Martin and Agarwal, Alekh and Li, Sharon and Schuurmans, Dale and Zhu, Jerry and Berkenkamp, Felix and Dong, Hanze and Bietti, Alberto},
+  volume = {306},
+  series = {Proceedings of Machine Learning Research},
+  month = {06--11 Jul},
+  publisher = {PMLR},
+  pdf = {https://raw.githubusercontent.com/mlresearch/v306/main/assets/fang26y/fang26y.pdf},
+  url = {https://proceedings.mlr.press/v306/fang26y.html}
 }
 ```
 
