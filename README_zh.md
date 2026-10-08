@@ -10,7 +10,9 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 
 将越狱研究论文自动转化为可执行攻击模块，并在统一框架下完成标准化评测，<br>构建随研究前沿持续演进的**活体基准**。
 
-[![Paper](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
+[![ICML 2026 正式论文](https://img.shields.io/badge/ICML_2026-PMLR_306-00629B.svg)](https://proceedings.mlr.press/v306/fang26y.html)
+[![Oral 录像](https://img.shields.io/badge/ICML_2026-Oral_Talk-1F8B4C.svg)](https://icml.cc/virtual/2026/oral/71103)
+[![arXiv](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
 [![排行榜](https://img.shields.io/badge/JBF-%E6%8E%92%E8%A1%8C%E6%A6%9C-blue.svg)](https://jbf.sqz.ac.cn/leaderboard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
@@ -23,6 +25,10 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 </div>
 
 ## 最新动态
+
+- **2026 年 9 月**：我们的 [ICML 2026 论文](https://proceedings.mlr.press/v306/fang26y.html)已正式发表于 **PMLR 第 306 卷，第 29548-29590 页**，[官方 BibTeX](https://proceedings.mlr.press/v306/fang26y.html#bibtex)现已可用。
+
+- **2026 年 8 月**：我们的 **ICML 2026 Oral 现场录像**已可在 [ICML 官方 Oral 页面](https://icml.cc/virtual/2026/oral/71103)观看。
 
 - **2026 年 5 月**：Jailbreak Foundry 入选 **[ICML 2026 Oral](https://icml.cc/virtual/2026/oral/71103)**；在 23,918 篇进入审稿的主赛道投稿中，仅 159 篇获得 Oral 席位（前 0.7%；全部赛道共 168 篇 Oral）。
 

@@ -10,7 +10,9 @@ Zhicheng Fang, Jingjie Zheng, Chenxu Fu, Wei Xu
 
 A system that translates jailbreak research papers into executable attack modules and evaluates them under a unified harness, enabling living benchmarks that evolve with the research frontier.
 
-[![Paper](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
+[![ICML 2026 Paper](https://img.shields.io/badge/ICML_2026-PMLR_306-00629B.svg)](https://proceedings.mlr.press/v306/fang26y.html)
+[![Oral Talk](https://img.shields.io/badge/ICML_2026-Oral_Talk-1F8B4C.svg)](https://icml.cc/virtual/2026/oral/71103)
+[![arXiv](https://img.shields.io/badge/arXiv-2602.24009-b31b1b.svg)](https://arxiv.org/pdf/2602.24009)
 [![Leaderboard](https://img.shields.io/badge/JBF-Leaderboard-blue.svg)](https://jbf.sqz.ac.cn/leaderboard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
@@ -23,6 +25,10 @@ A system that translates jailbreak research papers into executable attack module
 
 
 ## News
+
+- **September 2026**: Our [ICML 2026 paper](https://proceedings.mlr.press/v306/fang26y.html) is now published in **PMLR, Volume 306, pages 29548-29590**. The [official BibTeX](https://proceedings.mlr.press/v306/fang26y.html#bibtex) is available.
+
+- **August 2026**: The recording of our **ICML 2026 oral talk** is available on the [official oral page](https://icml.cc/virtual/2026/oral/71103).
 
 - **May 2026**: Jailbreak Foundry was selected for an **[Oral presentation at ICML 2026](https://icml.cc/virtual/2026/oral/71103)**; only 159 main-track papers received oral slots from 23,918 reviewed submissions (top 0.7%; 168 orals across all tracks).
 

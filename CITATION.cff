@@ -1,0 +1,56 @@
+cff-version: 1.2.0
+message: "If you use Jailbreak Foundry in your research, please cite the ICML 2026 paper below."
+type: software
+title: Jailbreak Foundry
+authors:
+  - family-names: Fang
+    given-names: Zhicheng
+  - family-names: Zheng
+    given-names: Jingjie
+  - family-names: Fu
+    given-names: Chenxu
+  - family-names: Xu
+    given-names: Wei
+repository-code: "https://github.com/OpenSQZ/Jailbreak-Foundry"
+url: "https://github.com/OpenSQZ/Jailbreak-Foundry"
+preferred-citation:
+  type: conference-paper
+  title: "Jailbreak Foundry: From Papers to Runnable Attacks for Reproducible Benchmarking"
+  authors:
+    - family-names: Fang
+      given-names: Zhicheng
+    - family-names: Zheng
+      given-names: Jingjie
+    - family-names: Fu
+      given-names: Chenxu
+    - family-names: Xu
+      given-names: Wei
+  collection-title: "Proceedings of the 43rd International Conference on Machine Learning"
+  editors:
+    - family-names: Zhang
+      given-names: Tong
+    - family-names: Dudik
+      given-names: Miroslav
+    - family-names: Jaggi
+      given-names: Martin
+    - family-names: Agarwal
+      given-names: Alekh
+    - family-names: Li
+      given-names: Sharon
+    - family-names: Schuurmans
+      given-names: Dale
+    - family-names: Zhu
+      given-names: Jerry
+    - family-names: Berkenkamp
+      given-names: Felix
+    - family-names: Dong
+      given-names: Hanze
+    - family-names: Bietti
+      given-names: Alberto
+  year: 2026
+  volume: 306
+  start: 29548
+  end: 29590
+  publisher:
+    name: PMLR
+  url: "https://proceedings.mlr.press/v306/fang26y.html"
