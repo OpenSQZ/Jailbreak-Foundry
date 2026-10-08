@@ -49,7 +49,7 @@ JBF provides an automated multi-agent workflow that:
 - **Translates** jailbreak papers into executable attack modules (28.2 min average)
 - **Reproduces** prior results with high fidelity (mean ASR deviation +0.26pp)
 - **Standardizes** evaluation across 30 attacks and 10 victim models
-- **Reduces** attack-specific code by 42% through shared infrastructure
+- **Reduces** attack-specific code by approximately 58% through shared infrastructure
 
 ## Architecture
 
@@ -85,7 +85,7 @@ Unified evaluation harness for comparable cross-attack and cross-model results:
 - **Consistent Judging**: GPT-4o judge with standardized rubric
 - **Unified Protocol**: Same harness, decoding, and scoring across all evaluations
 
-**Coverage**: 30 attacks × 10 victim models = 320 evaluation points in standardized AdvBench benchmark.
+**Coverage**: 30 attacks × 10 victim models = 300 attack-model combinations in the standardized AdvBench benchmark.
 
 ## Quick Start
 
@@ -219,7 +219,7 @@ JBF includes an automated pipeline that continuously monitors and integrates new
 
 ### Reusable Implementation Core
 
-**LOC Reduction**: 42% compression ratio compared to original implementations (22,714 → 9,549 LOC across 19 unique codebases).
+**LOC Reduction**: Approximately 58% fewer lines of code than the original implementations (22,714 → 9,549 LOC across 19 unique codebases), with a generated/original LOC ratio of 0.42.
 
 **Framework Reuse**: 82.5% of integrated codebase is shared infrastructure, reducing maintenance overhead and enabling rapid attack addition.
 
