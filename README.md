@@ -406,6 +406,8 @@ Contributions are welcome! The flattened architecture makes extension straightfo
 
 If you use Jailbreak Foundry in your research, please cite our [ICML 2026 paper](https://proceedings.mlr.press/v306/fang26y.html):
 
+The complete BibTeX entry is also available in [CITATION.bib](CITATION.bib).
+
 ```bibtex
 @InProceedings{pmlr-v306-fang26y,
   title = {{Jailbreak Foundry}: From Papers to Runnable Attacks for Reproducible Benchmarking},

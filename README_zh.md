@@ -418,6 +418,8 @@ python agents/run_paper_to_attack.py --arxiv_id <PAPER_ID>
 
 如果你在研究中使用 Jailbreak Foundry，请引用我们的 [ICML 2026 论文](https://proceedings.mlr.press/v306/fang26y.html)：
 
+完整 BibTeX 条目也可在 [CITATION.bib](CITATION.bib) 中获取。
+
 ```bibtex
 @InProceedings{pmlr-v306-fang26y,
   title = {{Jailbreak Foundry}: From Papers to Runnable Attacks for Reproducible Benchmarking},

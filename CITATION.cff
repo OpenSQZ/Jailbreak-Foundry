@@ -49,6 +49,8 @@ preferred-citation:
       given-names: Alberto
   year: 2026
   volume: 306
+  # GitHub omits volume from conference-paper BibTeX exports; retain it in notes too.
+  notes: "Proceedings of Machine Learning Research, volume 306."
   start: 29548
   end: 29590
   publisher:
