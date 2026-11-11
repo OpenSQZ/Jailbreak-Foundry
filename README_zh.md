@@ -123,7 +123,7 @@ pip install -e ".[all]"  # 含智能体等全部功能
 
 ```bash
 # 在一个模型上运行指定攻击
-python src/jbfoundry/runners/universal_attack.py \
+python -m jbfoundry.runners.universal_attack \
     --attack_name pair_gen \
     --model gpt-4o \
     --provider openai \
@@ -131,10 +131,10 @@ python src/jbfoundry/runners/universal_attack.py \
     --samples 5
 
 # 列出所有可用攻击
-python src/jbfoundry/runners/universal_attack.py --list_attacks
+python -m jbfoundry.runners.universal_attack --list_attacks
 
 # 加上防御机制运行
-python src/jbfoundry/runners/universal_attack.py \
+python -m jbfoundry.runners.universal_attack \
     --attack_name pair_gen \
     --defense smoothllm \
     --model gpt-4o \
@@ -147,24 +147,23 @@ python src/jbfoundry/runners/universal_attack.py \
 
 ```bash
 # 在所有模型与数据集上测试攻击
-python src/jbfoundry/runners/test_comprehensive.py \
-    --attack_name gta_gen \
-    --samples 50
+python -m jbfoundry.runners.test_comprehensive \
+    --attack_name gta_gen
 
 # 测试指定模型
-python src/jbfoundry/runners/test_comprehensive.py \
+python -m jbfoundry.runners.test_comprehensive \
     --attack_name pair_gen \
-    --model gpt-4o \
-    --samples 10
+    --model openai/gpt-4o
 
 # 测试指定数据集
-python src/jbfoundry/runners/test_comprehensive.py \
+python -m jbfoundry.runners.test_comprehensive \
     --attack_name tap_gen \
-    --dataset advbench \
-    --samples 20
+    --dataset advbench
 
-# 使用预配置脚本
-bash scripts/comprehensive_tests/attack/test_gta_comprehensive.sh
+# 使用 YAML 攻击配置
+python -m jbfoundry.runners.universal_attack \
+    --config scripts/attack_configs/gta_gen.yaml \
+    --samples 5
 ```
 
 **特性**：

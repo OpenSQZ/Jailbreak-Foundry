@@ -115,7 +115,7 @@ pip install -e ".[all]"  # All features including agents
 
 ```bash
 # Run a specific attack on one model
-python src/jbfoundry/runners/universal_attack.py \
+python -m jbfoundry.runners.universal_attack \
     --attack_name pair_gen \
     --model gpt-4o \
     --provider openai \
@@ -123,10 +123,10 @@ python src/jbfoundry/runners/universal_attack.py \
     --samples 5
 
 # List all available attacks
-python src/jbfoundry/runners/universal_attack.py --list_attacks
+python -m jbfoundry.runners.universal_attack --list_attacks
 
 # Run with defense
-python src/jbfoundry/runners/universal_attack.py \
+python -m jbfoundry.runners.universal_attack \
     --attack_name pair_gen \
     --defense smooth_llm_gen \
     --model gpt-4o \
@@ -139,24 +139,23 @@ For testing generated attacks across multiple models and datasets, use `test_com
 
 ```bash
 # Test attack across all models and datasets
-python src/jbfoundry/runners/test_comprehensive.py \
-    --attack_name gta_gen \
-    --samples 50
+python -m jbfoundry.runners.test_comprehensive \
+    --attack_name gta_gen
 
 # Test specific model
-python src/jbfoundry/runners/test_comprehensive.py \
+python -m jbfoundry.runners.test_comprehensive \
     --attack_name pair_gen \
-    --model gpt-4o \
-    --samples 10
+    --model openai/gpt-4o
 
 # Test specific dataset
-python src/jbfoundry/runners/test_comprehensive.py \
+python -m jbfoundry.runners.test_comprehensive \
     --attack_name tap_gen \
-    --dataset advbench \
-    --samples 20
+    --dataset advbench
 
-# Use pre-configured scripts for specific attacks
-bash scripts/comprehensive_tests/attack/test_gta_comprehensive.sh
+# Use a YAML attack config
+python -m jbfoundry.runners.universal_attack \
+    --config scripts/attack_configs/gta_gen.yaml \
+    --samples 5
 ```
 
 **Features**:
@@ -208,10 +207,6 @@ python agents/run_paper_to_attack.py \
 ```
 
 See [`agents/README.md`](agents/README.md) for detailed workflow documentation.
-
-### Automated Attack Discovery
-
-JBF includes an automated pipeline that continuously monitors and integrates new jailbreak research. Update reports with attack success rates and integration logs can be found in the [`attack_update_report/`](attack_update_report/) directory.
 
 ## Key Features
 
