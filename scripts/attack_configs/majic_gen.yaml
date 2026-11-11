@@ -1,0 +1,43 @@
+attack_name: "majic_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 3
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "llama-2-13b"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  max_queries: 20
+  learning_rate: 0.1
+  discount_factor: 0.9
+  decay_factor: 0.99
+  reset_factor: 0.1
+  temperature: 1.0
+  attacker_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  target_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  evaluator_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null

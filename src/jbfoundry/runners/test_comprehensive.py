@@ -5,12 +5,12 @@ Tests multiple models against multiple datasets with resumeable capability
 Generates comprehensive Attack Success Rate (ASR) table
 
 Usage:
-    python src/jbfoundry/runners/test_comprehensive.py --attack_name <attack> --dataset <dataset> [additional_args...]
+    python -m jbfoundry.runners.test_comprehensive --attack_name <attack> --dataset <dataset> [additional_args...]
     
 Examples:
-    python src/jbfoundry/runners/test_comprehensive.py --attack_name ice --dataset harmbench --all_samples --eval_model gpt-4o
-    python src/jbfoundry/runners/test_comprehensive.py --attack_name many_shot --dataset jbb-harmful --samples 10 --verbose
-    python src/jbfoundry/runners/test_comprehensive.py --attack_name simple_override --all_samples --eval_provider openai
+    python -m jbfoundry.runners.test_comprehensive --attack_name ice --dataset harmbench --all_samples --eval_model gpt-4o
+    python -m jbfoundry.runners.test_comprehensive --attack_name many_shot --dataset jbb-harmful --samples 10 --verbose
+    python -m jbfoundry.runners.test_comprehensive --attack_name simple_override --all_samples --eval_provider openai
     
 Features:
     - Tests multiple models × multiple datasets combinations
@@ -44,6 +44,11 @@ class ComprehensiveAttackTester:
         """Sanitize dataset name for use in file paths by replacing slashes with underscores"""
         return dataset.replace('/', '_')
 
+    @staticmethod
+    def sanitize_model_name(name):
+        """Sanitize model name for use in file paths by replacing slashes with underscores"""
+        return name.replace('/', '_')
+
     # Hardcoded providers and datasets (configurable)
     PROVIDERS = [
         {
@@ -76,7 +81,7 @@ class ComprehensiveAttackTester:
         {
             "name": "gpt-4o",
             "model": "gpt-4o",
-            "provider": "azure",
+            "provider": "openai",
         },
         {
             "name": "claude-3-5-sonnet",
@@ -171,7 +176,7 @@ class ComprehensiveAttackTester:
         print(f"🎯 Testing {self.attack_name} attack with {provider_config['name']} on {dataset}...")
 
         cmd = [
-            "python", "src/jbfoundry/runners/universal_attack.py",
+            sys.executable, "-m", "jbfoundry.runners.universal_attack",
             "--attack_name", self.attack_name,
             "--model", provider_config["model"],
             "--provider", provider_config["provider"],
@@ -388,7 +393,7 @@ class ComprehensiveAttackTester:
         
         for provider_config in self.PROVIDERS:
             for dataset in self.DATASETS:
-                combination_key = f"{provider_config['name']}_{self.sanitize_dataset_name(dataset)}"
+                combination_key = f"{self.sanitize_model_name(provider_config['name'])}_{self.sanitize_dataset_name(dataset)}"
                 output_dir = os.path.join(self.base_output_dir, combination_key)
                 
                 if os.path.exists(output_dir):
@@ -428,27 +433,54 @@ class ComprehensiveAttackTester:
 
     def run_comprehensive_test(self, model_filter=None, dataset_filter=None, restart=False, retry_invalid=True, retry_failed=False):
         """Run comprehensive testing with optional filters"""
-        # Support comma-separated model names
+        # Parse model_filter - supports two formats:
+        # 1. Name from PROVIDERS list: "gpt-4o"
+        # 2. Dynamic format: "provider/model" (e.g., "wenwen/gpt-5.4")
         if model_filter:
-            model_names = [m.strip() for m in model_filter.split(',')]
-            available_model_names = [p["name"] for p in self.PROVIDERS]
+            if "/" in model_filter:
+                # Dynamic format: provider/model
+                provider_name, model_name = model_filter.split("/", 1)
+                print(f"🔧 Dynamic mode: Using {provider_name}/{model_name} (not from PROVIDERS list)")
+                dynamic_provider = {
+                    "name": model_name,
+                    "model": model_name,
+                    "provider": provider_name
+                }
+                providers = [dynamic_provider]
+            else:
+                # Legacy mode: comma-separated model names from PROVIDERS list
+                model_names = [m.strip() for m in model_filter.split(',')]
+                available_model_names = [p["name"] for p in self.PROVIDERS]
 
-            # Check which models are invalid
-            invalid_models = [m for m in model_names if m not in available_model_names]
-            if invalid_models:
-                print(f"❌ Invalid model(s): {', '.join(invalid_models)}")
-                print(f"Available models: {', '.join(available_model_names)}")
-                return
+                # Check which models are invalid
+                invalid_models = [m for m in model_names if m not in available_model_names]
+                if invalid_models:
+                    print(f"❌ Invalid model(s): {', '.join(invalid_models)}")
+                    print(f"Available models: {', '.join(available_model_names)}")
+                    return
 
-            providers = [p for p in self.PROVIDERS if p["name"] in model_names]
+                providers = [p for p in self.PROVIDERS if p["name"] in model_names]
         else:
             providers = self.PROVIDERS
 
-        datasets = [d for d in self.DATASETS if not dataset_filter or d == dataset_filter]
-
-        if not datasets:
-            print(f"❌ Dataset '{dataset_filter}' not found!")
-            return
+        # Parse dataset_filter - supports two formats:
+        # 1. Name from DATASETS list
+        # 2. Any CSV file path (for dynamically downloaded datasets)
+        if dataset_filter:
+            from pathlib import Path
+            if dataset_filter in self.DATASETS:
+                # From DATASETS list
+                datasets = [dataset_filter]
+            elif Path(dataset_filter).exists() or dataset_filter.startswith("assets/"):
+                # Dynamic dataset path (may not exist yet if agent will download it)
+                datasets = [dataset_filter]
+            else:
+                # Not found in DATASETS and not an existing path
+                # Treat as path anyway (agent may download it)
+                print(f"⚠️  Warning: Dataset '{dataset_filter}' not found, treating as path")
+                datasets = [dataset_filter]
+        else:
+            datasets = self.DATASETS
 
         print(f"🎯 {self.attack_name.upper()} Attack Comprehensive Testing")
         print("="*50)
@@ -476,7 +508,7 @@ class ComprehensiveAttackTester:
         tasks = []
         for provider_config in providers:
             for dataset in datasets:
-                combination_key = f"{provider_config['name']}_{self.sanitize_dataset_name(dataset)}"
+                combination_key = f"{self.sanitize_model_name(provider_config['name'])}_{self.sanitize_dataset_name(dataset)}"
                 output_dir = os.path.join(self.base_output_dir, combination_key)
 
                 # Check if already completed
@@ -558,7 +590,7 @@ class ComprehensiveAttackTester:
         print(f"\n{'='*90}")
         print(f"🎉 {self.attack_name.upper()} ATTACK COMPREHENSIVE TESTING COMPLETED!")
         print("="*90)
-        self.print_progress_table(final_progress)
+        # self.print_progress_table(final_progress)
         
         markdown_report = self.generate_markdown_report(final_progress)
         final_results_file = f"{self.base_output_dir}/final_results.md"
@@ -567,6 +599,9 @@ class ComprehensiveAttackTester:
         
         print(f"\n📝 Markdown report saved to: {final_results_file}")
         print(f"Individual test results in: {self.base_output_dir}/")
+
+        # Return whether any combinations passed
+        return len(final_progress.get("completed", {})) > 0
 
 def parse_args():
     """Parse command line arguments, separating known from unknown"""
@@ -578,8 +613,8 @@ def parse_args():
     
     parser.add_argument("--attack_name", required=True, help="Name of the attack to test")
     parser.add_argument("--defense", help="Defense name to test (optional)")
-    parser.add_argument("--dataset", help="Test only this dataset")
-    parser.add_argument("--model", help="Test only this model (supports comma-separated list: 'llama-2-7b-chat,gpt-4,gpt-4o')")
+    parser.add_argument("--dataset", help="Dataset: name from DATASETS list, or any CSV file path")
+    parser.add_argument("--model", help="Model: name from PROVIDERS list, or 'provider/model' format (e.g., 'wenwen/gpt-5.4')")
     parser.add_argument("--status", action="store_true", help="Only print progress table and exit")
     parser.add_argument("--fix-progress", action="store_true", help="Fix progress JSON from existing results and exit")
     parser.add_argument("--restart", action="store_true", default=False,
@@ -634,7 +669,9 @@ def main():
         tester.fix_progress_from_results()
         return
 
-    tester.run_comprehensive_test(args.model, args.dataset, args.restart, args.retry_invalid, args.retry_failed)
+    any_passed = tester.run_comprehensive_test(args.model, args.dataset, args.restart, args.retry_invalid, args.retry_failed)
+    if not any_passed:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 

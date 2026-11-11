@@ -7,8 +7,8 @@ where the model appears to have already started answering a harmful query.
 
 from typing import Dict, Any, Optional, List
 import re
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 # Templates from the reference repository
@@ -216,17 +216,10 @@ class ResponseAttackGen(ModernBaseAttack):
         ),
         "auxiliary_model": AttackParameter(
             name="auxiliary_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used to generate attack components",
             cli_arg="--auxiliary_model"
-        ),
-        "auxiliary_provider": AttackParameter(
-            name="auxiliary_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the auxiliary model",
-            cli_arg="--auxiliary_provider"
         ),
         "max_retries": AttackParameter(
             name="max_retries",
@@ -245,10 +238,11 @@ class ResponseAttackGen(ModernBaseAttack):
         """Initialize and return the auxiliary LLM."""
         if self.aux_llm is None:
             aux_model = self.get_parameter_value("auxiliary_model")
-            aux_provider = self.get_parameter_value("auxiliary_provider")
             self.aux_llm = LLMLiteLLM.from_config(
-                model_name=aux_model,
-                provider=aux_provider
+                model_name=aux_model["model"],
+                provider=aux_model["provider"],
+                api_key=aux_model.get("api_key"),
+                api_base=aux_model.get("api_base")
             )
         return self.aux_llm
     

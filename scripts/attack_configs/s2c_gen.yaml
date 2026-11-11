@@ -1,0 +1,29 @@
+attack_name: "s2c_gen"
+dataset: "assets/jbb-harmful-behaviors.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 5
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gemini-2.5-pro"
+  provider: "vertex_ai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "Llama-2-7B-Chat"
+  provider: "local-llama2-7b"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  attack_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  obfuscation_method: "random"
+  per_query_timeout: 1800

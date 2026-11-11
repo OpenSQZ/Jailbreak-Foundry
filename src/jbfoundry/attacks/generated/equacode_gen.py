@@ -10,7 +10,7 @@ under the guise of solving an equation and completing code.
 """
 
 from typing import Dict, Any, Optional
-from ..base import ModernBaseAttack, AttackParameter
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 
 
 class EquaCodeGen(ModernBaseAttack):

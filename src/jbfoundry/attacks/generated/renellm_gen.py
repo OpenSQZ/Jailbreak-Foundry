@@ -16,8 +16,8 @@ from typing import Dict, Any, Optional, List
 import random
 import logging
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -36,31 +36,17 @@ class ReNeLLMAttack(ModernBaseAttack):
         ),
         "rewrite_model": AttackParameter(
             name="rewrite_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for prompt rewriting",
             cli_arg="--rewrite_model"
         ),
-        "rewrite_provider": AttackParameter(
-            name="rewrite_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for rewrite model",
-            cli_arg="--rewrite_provider"
-        ),
         "judge_model": AttackParameter(
             name="judge_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for harmful classification",
             cli_arg="--judge_model"
-        ),
-        "judge_provider": AttackParameter(
-            name="judge_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for judge model",
-            cli_arg="--judge_provider"
         ),
         "rewrite_temperature": AttackParameter(
             name="rewrite_temperature",
@@ -140,18 +126,19 @@ Return Second paragraph *Only*."""
         
         # Initialize LLM instances for rewriting and judging
         rewrite_model = self.get_parameter_value("rewrite_model")
-        rewrite_provider = self.get_parameter_value("rewrite_provider")
         judge_model = self.get_parameter_value("judge_model")
-        judge_provider = self.get_parameter_value("judge_provider")
-        
         self.rewrite_llm = LLMLiteLLM.from_config(
-            provider=rewrite_provider,
-            model_name=rewrite_model
+            provider=rewrite_model["provider"],
+            model_name=rewrite_model["model"],
+            api_key=rewrite_model.get("api_key"),
+            api_base=rewrite_model.get("api_base")
         )
         
         self.judge_llm = LLMLiteLLM.from_config(
-            provider=judge_provider,
-            model_name=judge_model
+            provider=judge_model["provider"],
+            model_name=judge_model["model"],
+            api_key=judge_model.get("api_key"),
+            api_base=judge_model.get("api_base")
         )
 
     def _remove_number_prefix(self, text: str) -> str:

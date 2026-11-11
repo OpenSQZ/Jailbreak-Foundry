@@ -2,7 +2,7 @@
 JBFoundry: An integrated framework for automatic LLM jailbreak techniques.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 from .utils.logging import configure_logging
 

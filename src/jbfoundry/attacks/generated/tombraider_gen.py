@@ -5,8 +5,8 @@ Paper: TOMBRAIDER: Jailbreaking LLMs through Multi-Turn Historical Context (2501
 """
 
 from typing import Dict, Any, Optional, List
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class TombraiderGenAttack(ModernBaseAttack):
@@ -22,15 +22,15 @@ class TombraiderGenAttack(ModernBaseAttack):
     PARAMETERS = {
         "inspector_model": AttackParameter(
             name="inspector_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model for Inspector agent (constructs historical prompts)",
             cli_arg="--inspector_model"
         ),
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model for Attacker agent (steers toward harmful content)",
             cli_arg="--attacker_model"
         ),
@@ -72,24 +72,28 @@ class TombraiderGenAttack(ModernBaseAttack):
         """Initialize the Inspector, Attacker, and Target LLMs."""
         # Get provider and api_base from args
         provider = "openai"
+        api_key = None
         api_base = None
         if self.args:
             provider = getattr(self.args, "provider", "openai")
+            api_key = getattr(self.args, "api_key", None)
             api_base = getattr(self.args, "api_base", None)
         
         # Inspector LLM (temperature=0 for consistency)
         self.inspector_llm = LLMLiteLLM.from_config(
-            provider=provider,
-            model_name=self.inspector_model,
-            api_base=api_base,
+            provider=self.inspector_model["provider"],
+            model_name=self.inspector_model["model"],
+            api_key=self.inspector_model.get("api_key"),
+            api_base=self.inspector_model.get("api_base"),
             temperature=0.0
         )
         
         # Attacker LLM (temperature=1.0 for creativity)
         self.attacker_llm = LLMLiteLLM.from_config(
-            provider=provider,
-            model_name=self.attacker_model,
-            api_base=api_base,
+            provider=self.attacker_model["provider"],
+            model_name=self.attacker_model["model"],
+            api_key=self.attacker_model.get("api_key"),
+            api_base=self.attacker_model.get("api_base"),
             temperature=1.0
         )
         
@@ -98,6 +102,7 @@ class TombraiderGenAttack(ModernBaseAttack):
         self.target_llm = LLMLiteLLM.from_config(
             provider=provider,
             model_name=target_model,
+            api_key=api_key,
             api_base=api_base,
             temperature=0.0
         )

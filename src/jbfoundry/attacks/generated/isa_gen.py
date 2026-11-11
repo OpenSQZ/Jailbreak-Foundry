@@ -12,8 +12,8 @@ The attack operates in two steps:
 """
 
 from typing import Dict, Any, Optional
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 # =============================================================================
 # PROMPTS FROM REFERENCE IMPLEMENTATION
@@ -47,8 +47,8 @@ class ISAGen(ModernBaseAttack):
     PARAMETERS = {
         "helper_model": AttackParameter(
             name="helper_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used to perform normalization and intent shifts",
             cli_arg="--isa-helper"
         ),
@@ -69,16 +69,11 @@ class ISAGen(ModernBaseAttack):
         # Initialize helper LLM for transformations
         helper_model = self.get_parameter_value("helper_model")
         
-        # Parse provider from model name if present (e.g., "openai/gpt-4o")
-        if "/" in helper_model:
-            provider, model = helper_model.split("/", 1)
-        else:
-            # Default to openai provider when unspecified
-            provider, model = "openai", helper_model
-        
         self.helper_llm = LLMLiteLLM.from_config(
-            model_name=model,
-            provider=provider,
+            model_name=helper_model["model"],
+            provider=helper_model["provider"],
+            api_key=helper_model.get("api_key"),
+            api_base=helper_model.get("api_base"),
             temperature=0.0
         )
     

@@ -98,12 +98,43 @@ class DefenseRegistry:
                 return _DEFENSE_REGISTRY[file_stem]
 
             # Fallback: scan module for a BaseDefense subclass with a name
-            for _, obj in inspect.getmembers(module, inspect.isclass):
+            for name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, BaseDefense) and obj is not BaseDefense and getattr(obj, "name", ""):
+                    # Enforce name matches file stem
+                    if obj.name != file_stem:
+                        raise ValueError(
+                            f"Class {name} in {module_name} has name = \"{obj.name}\" "
+                            f"but the file is named \"{file_stem}.py\". "
+                            f"Fix: set name = \"{file_stem}\" (or use @register_defense(\"{file_stem}\"))"
+                        )
                     _DEFENSE_REGISTRY[obj.name] = obj
                     self._loaded_defenses[obj.name] = obj
                     logger.debug(f"Loaded defense: {obj.name} from {module_name}")
                     return obj
+
+            # Module loaded but no class matched — diagnose why
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if obj is BaseDefense:
+                    continue
+                # Wrong import path: dual module identity
+                base_names = [b.__name__ for b in getattr(obj, '__mro__', [])]
+                if 'BaseDefense' in base_names and not issubclass(obj, BaseDefense):
+                    actual_mod = next(
+                        (b.__module__ for b in obj.__mro__ if b.__name__ == 'BaseDefense'), '?'
+                    )
+                    raise ImportError(
+                        f"Class {name} in {module_name} inherits BaseDefense from "
+                        f"'{actual_mod}', but the registry expects it from "
+                        f"'{BaseDefense.__module__}'. "
+                        f"Fix: use 'from jbfoundry.defenses.base import BaseDefense' (not 'from src.jbfoundry...')."
+                    )
+                # Missing or default name attribute
+                if issubclass(obj, BaseDefense) and getattr(obj, "name", "base") == "base":
+                    raise ValueError(
+                        f"Class {name} in {module_name} extends BaseDefense "
+                        f"but has no name attribute (or it is still \"base\"). "
+                        f"Fix: set name = \"{file_stem}\" or use @register_defense(\"{file_stem}\")"
+                    )
 
             logger.warning(f"No valid defense class found in {module_name}")
             return None

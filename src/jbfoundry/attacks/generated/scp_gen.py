@@ -9,8 +9,8 @@ Paper: Sugar-Coated Poison: Defense Threshold Decay via Benign Input Injection (
 
 from typing import Dict, Any, Optional, List
 import random
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 # Benign token pool from the paper (Table 10)
 BENIGN_TOKEN_POOL = ["protect", "secure", "preserve", "avoid", "conserve", "eliminate", "remove"]
@@ -37,17 +37,10 @@ class SCPAttack(ModernBaseAttack):
     PARAMETERS = {
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for benign input generation",
             cli_arg="--attacker-model"
-        ),
-        "attacker_provider": AttackParameter(
-            name="attacker_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for attacker model",
-            cli_arg="--attacker-provider"
         ),
         "max_benign_retries": AttackParameter(
             name="max_benign_retries",
@@ -71,14 +64,15 @@ class SCPAttack(ModernBaseAttack):
         
         # Get parameters
         attacker_model = self.get_parameter_value("attacker_model")
-        attacker_provider = self.get_parameter_value("attacker_provider")
         self.max_benign_retries = self.get_parameter_value("max_benign_retries")
         self.strategies = self.get_parameter_value("strategies")
         
         # Initialize attacker LLM for benign input generation
         self.attacker_llm = LLMLiteLLM.from_config(
-            model_name=attacker_model,
-            provider=attacker_provider
+            model_name=attacker_model["model"],
+            provider=attacker_model["provider"],
+            api_key=attacker_model.get("api_key"),
+            api_base=attacker_model.get("api_base")
         )
         
         # Cache for benign inputs (to avoid regenerating for same goal)

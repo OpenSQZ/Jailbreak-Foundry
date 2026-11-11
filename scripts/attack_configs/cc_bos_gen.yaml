@@ -1,0 +1,45 @@
+attack_name: "cc_bos_gen"
+dataset: "assets/benchmark-advbench-50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 5
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  attack_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  translation_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  judge_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  population_size: 2
+  max_iterations: 2
+  stagnation_threshold: 2
+  step_size_decay: 0.95
+  cauchy_mutation_scale: 0.2
+  max_resample_attempts: 5
+  early_stop_threshold: 120
+  per_query_timeout: 100

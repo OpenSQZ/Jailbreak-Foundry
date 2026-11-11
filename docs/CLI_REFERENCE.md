@@ -73,8 +73,8 @@ Use `--list_attacks` to see all 30 available attacks.
 
 ```bash
 --defense DEFENSE        # Apply defense mechanism
-                        # Options: smooth_llm_gen, semantic_smooth_gen,
-                        #          backtranslation_gen, g4d_gen, etc.
+                        # Options: smoothllm, paraphrase, perplexity,
+                        #          retokenization, semantic_smooth, etc.
 ```
 
 ### Output and Control
@@ -152,7 +152,7 @@ python src/jbfoundry/runners/universal_attack.py \
 # With defense
 python src/jbfoundry/runners/universal_attack.py \
     --attack_name pair_gen \
-    --defense smooth_llm_gen \
+    --defense smoothllm \
     --model gpt-4o \
     --provider openai \
     --samples 10

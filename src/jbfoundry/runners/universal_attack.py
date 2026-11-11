@@ -12,12 +12,33 @@ import json
 import random
 import logging
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Optional
 
 import jbfoundry as jbf
 from jbfoundry.utils.logging import configure_logging
 
 logger = logging.getLogger(__name__)
+
+
+class AttackTimeoutError(Exception):
+    """
+    Exception raised when an attack query exceeds the timeout limit.
+
+    This error indicates that the attack implementation is taking too long
+    per query and should be stopped or optimized.
+    """
+    def __init__(self, message: str, example_id: int = None, timeout_seconds: int = None):
+        super().__init__(message)
+        self.example_id = example_id
+        self.timeout_seconds = timeout_seconds
+
+    def __str__(self):
+        base_msg = super().__str__()
+        if self.example_id is not None and self.timeout_seconds is not None:
+            return f"{base_msg} (Example ID: {self.example_id}, Timeout: {self.timeout_seconds}s)"
+        return base_msg
 
 # Try to import the modern attack system
 try:
@@ -41,6 +62,87 @@ def create_argument_parser():
         exit(1)
 
 
+def _cli_option_was_provided(option_name: str) -> bool:
+    """Return whether an option was explicitly provided on the command line."""
+    import sys
+
+    dashed = "--" + option_name.replace("_", "-")
+    underscored = "--" + option_name.replace("-", "_")
+    return any(arg == dashed or arg.startswith(f"{dashed}=") or arg == underscored or arg.startswith(f"{underscored}=")
+               for arg in sys.argv[1:])
+
+
+def _load_yaml_config(config_path: str) -> dict:
+    """Load a YAML config file."""
+    try:
+        import yaml
+    except ImportError as e:
+        raise RuntimeError("PyYAML is required for --config support") from e
+
+    path = Path(config_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with path.open("r") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Config file must contain a YAML mapping: {config_path}")
+    return data
+
+
+def _set_arg_from_config(args, name: str, value) -> None:
+    """Set an argparse attribute from config unless the CLI explicitly overrides it."""
+    if value is None:
+        return
+    if _cli_option_was_provided(name):
+        return
+    setattr(args, name, value)
+
+
+def apply_yaml_config(args):
+    """Merge current-schema --config YAML into args while preserving explicit CLI overrides."""
+    config_path = getattr(args, "config", None)
+    if not config_path:
+        return args
+
+    config = _load_yaml_config(config_path)
+
+    attack_name = config.get("attack_name")
+    _set_arg_from_config(args, "attack_name", attack_name)
+
+    # Core execution fields in the current YAML schema.
+    for key in [
+        "dataset", "samples", "all_samples", "output_dir", "output",
+        "defense", "paraphrase_model", "verbose", "seed",
+        "attempts_per_query", "attempts_success_threshold", "max_workers",
+        "restart", "retry_invalid", "retry_failed", "per_query_timeout",
+    ]:
+        _set_arg_from_config(args, key, config.get(key))
+
+    victim = config.get("victim_model") or {}
+    if isinstance(victim, dict):
+        for yaml_key, arg_key in [
+            ("model", "model"),
+            ("provider", "provider"),
+            ("api_key", "api_key"),
+            ("api_base", "api_base"),
+        ]:
+            _set_arg_from_config(args, arg_key, victim.get(yaml_key))
+
+    # Evaluation model block.
+    eval_model = config.get("eval_model")
+    if isinstance(eval_model, dict):
+        _set_arg_from_config(args, "eval_model", eval_model.get("model"))
+        _set_arg_from_config(args, "eval_provider", eval_model.get("provider"))
+        _set_arg_from_config(args, "eval_api_key", eval_model.get("api_key"))
+        _set_arg_from_config(args, "eval_api_base", eval_model.get("api_base"))
+
+    attack_parameters = config.get("attack_parameters") or {}
+    if isinstance(attack_parameters, dict):
+        for key, value in attack_parameters.items():
+            _set_arg_from_config(args, key, value)
+
+    return args
 
 
 def setup_attack(args, attack_name=None):
@@ -141,11 +243,15 @@ def setup_evaluator(args):
     # Fall back to generic jailbreak evaluation for other datasets
     eval_provider = getattr(args, 'eval_provider', 'openai')
     eval_model = getattr(args, 'eval_model', 'gpt-4o')
+    eval_api_key = getattr(args, 'eval_api_key', None)
+    eval_api_base = getattr(args, 'eval_api_base', None)
 
     # Create unified LLM evaluator that works with any provider
     evaluator = LLMChatEvaluator(
         model_name=eval_model,
-        provider=eval_provider
+        provider=eval_provider,
+        api_key=eval_api_key,
+        api_base=eval_api_base
     )
 
     evaluation_info = {
@@ -269,6 +375,8 @@ def initialize_results_file(args, attack_meta):
             "model": args.model,
             "provider": args.provider,
             "dataset": args.dataset,
+            "eval_model": args.eval_model,
+            "eval_provider": args.eval_provider,
             "attack": attack_meta,
             "system_info": {
                 "modular_system_available": MODERN_SYSTEM_AVAILABLE,
@@ -286,18 +394,52 @@ def initialize_results_file(args, attack_meta):
     return output_file, set()
 
 
-def process_single_example(args_tuple):
-    """Process a single example (extracted for parallel processing)."""
-    from jbfoundry.cost_tracker import CostTracker
+def _upsert_result_to_file(output_file: str, result: dict, example_id: int) -> None:
+    """
+    Upsert a result to the output file with file locking.
 
-    i, example, llm, attack, evaluator, attack_meta, args, output_file, completed_ids = args_tuple
+    Args:
+        output_file: Path to the output JSON file
+        result: Result dictionary to save
+        example_id: ID of the example to upsert
+    """
+    import fcntl
+    try:
+        with open(output_file, 'r+') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            data = json.load(f)
+
+            # Find existing result with same example_id
+            existing_idx = None
+            for idx, r in enumerate(data["results"]):
+                if r["example_id"] == example_id:
+                    existing_idx = idx
+                    break
+
+            # Upsert: replace if exists, append if not
+            if existing_idx is not None:
+                data["results"][existing_idx] = result
+            else:
+                data["results"].append(result)
+
+            f.seek(0)
+            json.dump(data, f, indent=2)
+            f.truncate()
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except Exception as e:
+        logger.warning(f"Could not save result to file: {e}")
+
+
+def _process_single_example_inner(i, example, llm, attack, evaluator, attack_meta, args, output_file, completed_ids):
+    """Inner function for processing a single example (to be wrapped with timeout)."""
+    from jbfoundry.cost_tracker import CostTracker
 
     # Skip if already completed
     if i in completed_ids:
         logger.info(f"Skipping already completed example {i+1}")
         return None
 
-    logger.info(f"Running {attack_meta['name']} attack on {args.dataset} example {i+1} via {args.provider}/{args.model}")
+    logger.info(f"Example {i+1}: running {attack_meta['name']} via {args.provider}/{args.model}")
     
     attempts_per_query = max(1, int(getattr(args, "attempts_per_query", 1)))
     success_threshold = getattr(args, "attempts_success_threshold", None)
@@ -312,6 +454,7 @@ def process_single_example(args_tuple):
     success_count = 0
     valid_attempts = 0
 
+    previous_attempt_failed: Optional[bool] = None
     for attempt_index in range(1, attempts_per_query + 1):
         # Create cost tracker for this attempt
         cost_tracker = CostTracker()
@@ -324,7 +467,9 @@ def process_single_example(args_tuple):
                 attempt_index=attempt_index,
                 attempts_per_query=attempts_per_query,
                 attempt_success_threshold=success_threshold,
-                cost_tracker=cost_tracker
+                cost_tracker=cost_tracker,
+                previous_attempt_failed=previous_attempt_failed,
+                example_id=i,
             )
         except Exception as e:
             logger.error(f"Error generating attack for example {i} (attempt {attempt_index}): {e}")
@@ -353,31 +498,9 @@ def process_single_example(args_tuple):
                     logger.error(f"Error evaluating response for example {i} (attempt {attempt_index}): {e}")
                     success = None
 
-        if success is not None:
-            valid_attempts += 1
-        if success:
-            success_count += 1
-
         cost_summary = cost_tracker.get_summary() if cost_tracker else None
-        if cost_summary:
-            for model_name, model_costs in cost_summary.get("by_model", {}).items():
-                if model_name not in aggregated_cost["by_model"]:
-                    aggregated_cost["by_model"][model_name] = {
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0,
-                        "reasoning_tokens": 0
-                    }
-                aggregated_cost["by_model"][model_name]["prompt_tokens"] += model_costs.get("prompt_tokens", 0)
-                aggregated_cost["by_model"][model_name]["completion_tokens"] += model_costs.get("completion_tokens", 0)
-                aggregated_cost["by_model"][model_name]["total_tokens"] += model_costs.get("total_tokens", 0)
-                aggregated_cost["by_model"][model_name]["reasoning_tokens"] += model_costs.get("reasoning_tokens", 0)
-
-            totals = cost_summary.get("totals", {})
-            aggregated_cost["totals"]["prompt_tokens"] += totals.get("prompt_tokens", 0)
-            aggregated_cost["totals"]["completion_tokens"] += totals.get("completion_tokens", 0)
-            aggregated_cost["totals"]["total_tokens"] += totals.get("total_tokens", 0)
-            aggregated_cost["totals"]["reasoning_tokens"] += totals.get("reasoning_tokens", 0)
+        if cost_tracker:
+            cost_tracker.aggregate_into(aggregated_cost)
 
         attempts.append({
             "attempt_index": attempt_index,
@@ -388,6 +511,23 @@ def process_single_example(args_tuple):
             "reasoning_content": response.get_reasoning_content() if response else None,
             "cost_summary": cost_summary
         })
+
+        # Track whether this attempt failed so attacks can use failure-conditioned
+        # feedback in the next attempt (e.g., Intent Laundering revision-regeneration).
+        previous_attempt_failed = (success is not None and not success)
+
+        if success is not None:
+            valid_attempts += 1
+        if success:
+            success_count += 1
+
+        # Log attempt result
+        attempt_status = "INVALID" if success is None else ("SUCCESS" if success else "FAILED")
+        if attempts_per_query > 1:
+            logger.info(f"Example {i+1}: attempt {attempt_index}/{attempts_per_query} {attempt_status} ({success_count}/{success_threshold})")
+
+        if success_count >= success_threshold:
+            break
 
     overall_success = None if valid_attempts == 0 else (success_count >= success_threshold)
     last_attempt = attempts[-1] if attempts else {}
@@ -411,39 +551,52 @@ def process_single_example(args_tuple):
     }
 
     # Save result to file immediately (upsert: replace if exists, append if not)
-    import fcntl
-    try:
-        with open(output_file, 'r+') as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            data = json.load(f)
-
-            # Find existing result with same example_id
-            existing_idx = None
-            for idx, r in enumerate(data["results"]):
-                if r["example_id"] == i:
-                    existing_idx = idx
-                    break
-
-            # Upsert: replace if exists, append if not
-            if existing_idx is not None:
-                data["results"][existing_idx] = result
-            else:
-                data["results"].append(result)
-
-            f.seek(0)
-            json.dump(data, f, indent=2)
-            f.truncate()
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-    except Exception as e:
-        logger.warning(f"Could not save result to file: {e}")
+    _upsert_result_to_file(output_file, result, i)
 
     if overall_success is None:
         status = "INVALID"
     else:
         status = "SUCCESS" if overall_success else "FAILED"
-    logger.info(f"Example {i+1} Result: {status} ({success_count}/{attempts_per_query})")
-    
+    logger.info(f"Example {i+1}: {status} ({success_count}/{attempts_per_query})")
+
     return result
+
+
+def process_single_example(args_tuple):
+    """Process a single example with optional timeout."""
+    i, example, llm, attack, evaluator, attack_meta, args, output_file, completed_ids = args_tuple
+
+    # Get timeout setting (in seconds, 0 or None means no timeout)
+    timeout = getattr(args, 'per_query_timeout', None)
+
+    if timeout and timeout > 0:
+        # Use ThreadPoolExecutor for timeout
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(
+            _process_single_example_inner,
+            i, example, llm, attack, evaluator, attack_meta, args, output_file, completed_ids
+        )
+        try:
+            result = future.result(timeout=timeout)
+            executor.shutdown(wait=True)
+            return result
+        except FuturesTimeoutError:
+            error_msg = f"Attack query timeout exceeded for example {i+1}"
+            logger.error(error_msg)
+            # Don't wait for the stuck thread - shut down immediately
+            executor.shutdown(wait=False)
+            raise AttackTimeoutError(
+                error_msg,
+                example_id=i,
+                timeout_seconds=timeout
+            )
+    else:
+        # No timeout, run directly
+        return _process_single_example_inner(
+            i, example, llm, attack, evaluator, attack_meta, args, output_file, completed_ids
+        )
 
 
 def run_attack_on_dataset(llm, attack, dataset, evaluator, attack_meta, args):
@@ -458,9 +611,36 @@ def run_attack_on_dataset(llm, attack, dataset, evaluator, attack_meta, args):
     ]
 
     # Process in parallel with configurable workers
-    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        # Just execute, don't collect results (they're saved to file incrementally)
-        executor.map(process_single_example, task_args)
+    executor = ThreadPoolExecutor(max_workers=args.max_workers)
+    try:
+        # Submit all tasks and get futures
+        futures = [executor.submit(process_single_example, task_arg) for task_arg in task_args]
+
+        # Process results as they complete (allows immediate timeout detection)
+        for future in as_completed(futures):
+            future.result()  # This will raise AttackTimeoutError if timeout occurred
+
+        # All tasks completed successfully
+        executor.shutdown(wait=True)
+    except AttackTimeoutError as e:
+        # Timeout detected - cancel pending tasks and exit immediately
+        logger.error(f"Attack timeout detected, terminating test immediately")
+        for f in futures:
+            f.cancel()
+        executor.shutdown(wait=False)
+
+        # Print timeout error message before exiting
+        print(f"\n{'='*80}", file=sys.stderr)
+        print(f"❌ ATTACK TIMEOUT ERROR", file=sys.stderr)
+        print(f"{'='*80}", file=sys.stderr)
+        print(f"\nThe attack implementation is running too long per query.", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
+        if hasattr(args, 'per_query_timeout') and args.per_query_timeout:
+            print(f"\nTimeout limit: {args.per_query_timeout} seconds per query", file=sys.stderr)
+        print(f"{'='*80}", file=sys.stderr)
+
+        # Force immediate exit (don't wait for background threads)
+        os._exit(2)
 
     return output_file
 
@@ -481,7 +661,11 @@ def update_final_metadata(output_file, evaluation_info):
             success_count = sum(1 for r in results if r["jailbroken"])
             success_rate = success_count / valid_count if valid_count > 0 else 0
             
-            print(f"Attack success rate: {success_rate:.2%} ({success_count}/{valid_count})")
+            print(
+                f"Attack success rate: {success_rate:.2%} ({success_count}/{valid_count}); "
+                f"denominator=valid only, invalid excluded; "
+                f"invalid={invalid_count}, total={len(results)}"
+            )
             
             # Update metadata
             data["metadata"]["valid_count"] = valid_count
@@ -524,6 +708,7 @@ def main():
     """Main function."""
     # Parse arguments using context-aware parser
     args = create_argument_parser()
+    args = apply_yaml_config(args)
     
     if args.verbose:
         configure_logging(verbose=True)
@@ -546,7 +731,7 @@ def main():
     print("Universal JBFoundry Attack Script - Modular Architecture")
     print("=" * 60)
     print(f"Modular attack system available: {MODERN_SYSTEM_AVAILABLE}")
-    
+
     # Set up model
     print("\nSetting up model...")
     llm = setup_model(args)
@@ -570,8 +755,24 @@ def main():
         return
     
     # Run single attack
-    output_file = run_single_attack(args, llm, evaluator, evaluation_info, dataset)
-    print(f"\nAttack completed. Results saved to: {output_file}")
+    try:
+        output_file = run_single_attack(args, llm, evaluator, evaluation_info, dataset)
+        print(f"\nAttack completed. Results saved to: {output_file}")
+    except AttackTimeoutError as e:
+        print(f"\n{'='*80}", file=sys.stderr)
+        print(f"❌ ATTACK TIMEOUT ERROR", file=sys.stderr)
+        print(f"{'='*80}", file=sys.stderr)
+        print(f"\nThe attack implementation is running too long per query.", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
+        if hasattr(args, 'per_query_timeout') and args.per_query_timeout:
+            print(f"\nTimeout limit: {args.per_query_timeout} seconds per query", file=sys.stderr)
+        print(f"\nPlease optimize the attack implementation to:", file=sys.stderr)
+        print(f"  - Reduce computational complexity", file=sys.stderr)
+        print(f"  - Use more efficient algorithms", file=sys.stderr)
+        print(f"  - Minimize API calls", file=sys.stderr)
+        print(f"  - Parallelize expensive operations where possible", file=sys.stderr)
+        print(f"\n{'='*80}", file=sys.stderr)
+        sys.exit(2)  # Exit with code 2 to indicate timeout error
 
 
 if __name__ == "__main__":

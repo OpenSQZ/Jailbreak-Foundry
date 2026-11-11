@@ -46,6 +46,18 @@ If a repository was cloned from links in the paper:
 - If the plan is ambiguous, record the ambiguity and prefer the framework contract interpretation.
 - If the implementation matches the plan and framework but differs from paper details, do NOT mark as an issue.
 
+## Framework File Modification Restriction (Critical)
+
+Generated attack work must not modify framework/core files. During audit, check whether any changes for this attack touched framework files, including:
+- `src/jbfoundry/runners/`
+- `src/jbfoundry/llm/litellm.py`
+- `src/jbfoundry/attacks/base.py`
+- `src/jbfoundry/attacks/factory.py`
+- `src/jbfoundry/attacks/registry.py`
+- Any other non-generated framework files
+
+If framework files were modified to make the generated attack work, flag it as a critical blocking issue and do not return "100% Fidelity". The required remedy is to keep all attack logic/configuration self-contained in the generated attack file and attack config. If an attack parameter conflicts with an existing framework CLI argument, require a unique attack-specific parameter/CLI name instead of framework parser changes.
+
 ## Iterative Audit Protocol
 
 ### Step 1: Check for Previous Audits
@@ -130,6 +142,7 @@ If this is a **re-audit** (file exists), you MUST:
 
 ### Framework Scope Boundaries (Attack vs. Evaluation)
 - This framework separates **attack generation** from **evaluation**. The attack class should implement the core attack logic (e.g., prompt transformation) and return the attack output only.
+- `generate_attack` may return either a plain string prompt or a preformatted chat message list (`[{"role": "...", "content": "..."}]`). If the implementation plan or paper/reference code uses system prompts, assistant turns, or multi-turn chat history as attack state, verify the generated attack returns role-preserving messages ending at the final user/query turn. The returned value is passed to the victim model by the runner, so it must be a victim-facing input; flag any default returned message list that ends with an already-generated victim/assistant response, judge response, helper response, or tool output, unless the implementation also prevents the runner from querying it again and the plan explicitly requires that behavior. If internal search already queried the victim and selected a successful response, the implementation should use that response only for scoring/selection, then return the selected history truncated before that assistant response or append/generate the next attacker/user prompt, matching the plan/source evaluation boundary. Treat flattening role-bearing chat history into a transcript string as a fidelity issue unless the source method itself does that or the plan explicitly proves roles are behaviorally irrelevant.
 - Do **not** require attack-specific logging, ASR computation, judge models, or evaluation loops to live inside the attack class if the framework provides them elsewhere.
 - When the paper/repo uses a monolithic script that mixes attack and evaluation, treat evaluation components as **out of scope** for the attack class unless evaluation is required to generate the attack itself.
 - If evaluation is required to generate the attack (e.g., candidate scoring/selection), the evaluation logic must live **inside the same Python file as the attack** (inline helper). Do NOT require existing judges in `src/jbfoundry/evaluation` for this in-attack evaluation.
@@ -138,6 +151,8 @@ If this is a **re-audit** (file exists), you MUST:
 - **Critical distinction**: If the monolithic script includes **attack search control** (e.g., `n_restarts`, `n_attempts`, retries, beam restarts, sampling loops that materially change attack success), those are part of the **attack algorithm**, not mere evaluation. You must verify these parameters exist and are plumbed into this framework (even if the loop is managed by a higher-level pipeline). Missing or unexposed restart/attempt controls are fidelity issues.
 - **Verdict gating**: If any required search control (e.g., `n_restarts`, `n_attempts`, retries, beam restarts) is missing, hard-coded, or not exposed in parameters, you MUST NOT conclude 100% Fidelity/coverage. Treat this as a blocking issue until fixed.
 - Instead, verify the attack integrates with the framework interface (inputs/outputs/params) and note where evaluation is handled, without marking missing metrics/logging/judging as fidelity issues.
+
+**Generated attacks must not import, instantiate, or call existing attacks** (`AttackFactory.create_attack`, registry lookups, or `jbfoundry.attacks.generated/manual`); flag this as a blocking issue.
 
 ### Verification Scope
 
@@ -164,10 +179,12 @@ For every algorithmic component in the paper, verify:
    - Types align with descriptions
    - Behavioral effects match paper
    - **Victim-as-target handling**: If the paper's "target model" is actually the same as the victim model under attack, confirm the implementation reads the target from `args.model`/`args.provider`, always uses `args.api_base`, and does NOT require separate `target_model`/`target_provider` parameters or test-script args. Only enforce this when target == victim; if the target is distinct, explicit target parameters are required.
+   - **api_key/api_base for victim/target model**: The victim or target LLM's `from_config()` call MUST pass `api_key=self.args.api_key` and `api_base=self.args.api_base`. A missing `api_key` on the victim/target model silently routes to a wrong provider at runtime. Flag any victim/target `from_config()` call that omits these as a **fidelity bug**.
+   - **Helper model config shape**: Every attack-specific helper LLM (attacker, judge, scorer, rewriter, translator, detector, etc.) MUST be configured as one dict-valued `AttackParameter` with `model`, `provider`, `api_key`, and `api_base`. Flag flattened helper model parameters such as `attacker_model` plus `attacker_provider`, `judge_model` plus `judge_provider`, or any separate `*_api_key` / `*_api_base` siblings as a **configuration bug**.
 
 5. **External Dependencies**
    - Model selection matches paper (e.g., GPT-4, Claude)
-   - **IMPORTANT**: Only verify MODEL name, NOT provider/API (user may use different API access)
+   - **IMPORTANT**: Provider should be the natural model-family provider unless the paper/reference explicitly requires another one: GPT/OpenAI models use `openai`; Claude models use `anthropic`. Flag deployment-specific provider guesses such as `wenwen`, `iiis`, `infini`, or `aliyun` when they are not paper-required.
    - API calls align with methodology
    - Sampling strategies match specs
 
@@ -266,7 +283,8 @@ If this is a re-audit, your output MUST include this section after the iteration
 - File path and line numbers
 - Exact code changes needed
 - Paper section justifying change
-- Priority/severity]
+- Priority/severity
+- If framework files were modified, require reverting those changes and moving the fix into generated attack/config files]
 
 ## Final Verdict
 ["100% Fidelity" ONLY if zero deviations. Otherwise "Not 100% Fidelity" with summary of gaps]
@@ -306,8 +324,10 @@ Before finalizing:
 4. Parameter Mapping is complete
 5. Misalignments have specific citations and locations
 6. Required Changes are actionable and minimal
-7. Verdict matches evidence
-8. If re-audit, verify you have:
+7. Verified no framework/core files were modified for this generated attack; if they were, flagged it as a critical blocking issue
+8. Verified any CLI-name conflict is resolved by attack-specific parameter naming, not framework parser changes
+9. Verdict matches evidence
+10. If re-audit, verify you have:
    - Documented status of ALL prior issues
    - Performed spot-checks on previously-correct components
    - Actively searched for NEW issues (not just re-checked old ones)

@@ -15,8 +15,8 @@ from typing import Dict, Any, Optional
 import re
 import logging
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +30,10 @@ class WordGameGen(ModernBaseAttack):
     PARAMETERS = {
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Helper model for finding malicious words and generating hints",
             cli_arg="--attacker-model"
-        ),
-        "attacker_provider": AttackParameter(
-            name="attacker_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the attacker model",
-            cli_arg="--attacker-provider"
         ),
         "use_wordgame_plus": AttackParameter(
             name="use_wordgame_plus",
@@ -64,14 +57,15 @@ class WordGameGen(ModernBaseAttack):
         
         # Initialize the attacker LLM for helper tasks
         attacker_model = self.get_parameter_value("attacker_model")
-        attacker_provider = self.get_parameter_value("attacker_provider")
         
         self.attacker_llm = LLMLiteLLM.from_config(
-            model_name=attacker_model,
-            provider=attacker_provider
+            model_name=attacker_model["model"],
+            provider=attacker_model["provider"],
+            api_key=attacker_model.get("api_key"),
+            api_base=attacker_model.get("api_base")
         )
         
-        logger.info(f"Initialized WordGame attack with attacker model: {attacker_model} (provider: {attacker_provider})")
+        logger.info(f"Initialized WordGame attack with attacker model: {attacker_model['model']} (provider: {attacker_model['provider']})")
     
     def _identify_malicious_word(self, goal: str) -> str:
         """

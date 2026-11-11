@@ -23,8 +23,8 @@ Gaps that cannot be fully addressed within framework constraints:
 from typing import Dict, Any, Optional
 import json
 import re
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class RTSGen(ModernBaseAttack):
@@ -36,8 +36,8 @@ class RTSGen(ModernBaseAttack):
     PARAMETERS = {
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="qwen3-14b",
+            param_type=dict,
+            default={'model': 'qwen3-14b', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="The LLM used for classification, scenario generation, and rewriting (paper default: Qwen2.5, using qwen3-14b as available substitute)",
             cli_arg="--attack_model"
         ),
@@ -133,49 +133,12 @@ Provide a natural rewrite of this instruction:
         # Get attack model parameter
         attack_model = self.get_parameter_value("attack_model")
 
-        # Initialize attack LLM - determine provider based on model name
-        # Gap #9: Use appropriate provider mapping based on framework configuration
-        # Mapping from test_comprehensive.py:
-        # - llama models -> openai provider
-        # - gpt models -> openai provider
-        # - claude models -> anthropic provider
-        # - qwen models -> infini provider
-
-        model_lower = attack_model.lower()
-        if "llama" in model_lower:
-            provider = "openai"
-            # Set api_base for specific llama models
-            if "llama-2-7b" in model_lower:
-                api_base = "http://10.210.22.10:30254/v1"
-            elif "llama-3-8b" in model_lower:
-                api_base = "http://10.210.22.10:30253/v1"
-            else:
-                api_base = None
-            self.attack_llm = LLMLiteLLM.from_config(
-                provider=provider,
-                model_name=attack_model,
-                api_base=api_base
-            )
-        elif "gpt" in model_lower or "claude" in model_lower:
-            provider = "openai"
-            self.attack_llm = LLMLiteLLM.from_config(
-                provider=provider,
-                model_name=attack_model
-            )
-        elif "qwen" in model_lower:
-            # provider = "infini"
-            provider = "aliyun"
-            self.attack_llm = LLMLiteLLM.from_config(
-                provider=provider,
-                model_name=attack_model
-            )
-        else:
-            # Default fallback
-            provider = "openai"
-            self.attack_llm = LLMLiteLLM.from_config(
-                provider=provider,
-                model_name=attack_model
-            )
+        self.attack_llm = LLMLiteLLM.from_config(
+            provider=attack_model["provider"],
+            model_name=attack_model["model"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base"),
+        )
     
     def _classify_and_extract(self, query: str) -> tuple[int, str]:
         """

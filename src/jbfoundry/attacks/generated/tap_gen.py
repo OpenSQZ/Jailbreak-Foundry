@@ -17,8 +17,8 @@ import copy
 import logging
 from typing import Dict, Any, Optional, List
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -60,33 +60,26 @@ class TapGenAttack(ModernBaseAttack):
         ),
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="gpt-4",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model for generating attack variations",
             cli_arg="--attacker_model"
         ),
         "evaluator_model": AttackParameter(
             name="evaluator_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model for evaluating and scoring attacks",
             cli_arg="--evaluator_model"
         ),
         "target_model": AttackParameter(
             name="target_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Target model to attack (should match --model)",
             cli_arg="--target_model"
         ),
-        "target_provider": AttackParameter(
-            name="target_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for target model (should match --provider)",
-            cli_arg="--target_provider"
-        ),
-    }
+            }
     
     def __init__(self, args=None, **kwargs):
         """Initialize TAP attack."""
@@ -101,6 +94,7 @@ class TapGenAttack(ModernBaseAttack):
         self.evaluator_model = self.get_parameter_value("evaluator_model")
         self.target_model = args.model
         self.target_provider = args.provider
+        self.target_api_key = args.api_key
         self.target_api_base = args.api_base
         
         # Initialize LLMs (will be created in generate_attack if not provided)
@@ -289,8 +283,10 @@ SCORE: {score}"""
         # Initialize attacker LLM if not provided
         if self.attacker_llm is None:
             self.attacker_llm = LLMLiteLLM.from_config(
-                provider="openai",
-                model_name=self.attacker_model,
+                provider=self.attacker_model["provider"],
+                model_name=self.attacker_model["model"],
+                api_key=self.attacker_model.get("api_key"),
+                api_base=self.attacker_model.get("api_base"),
                 temperature=1.0,
                 max_tokens=500
             )
@@ -298,8 +294,10 @@ SCORE: {score}"""
         # Initialize evaluator LLM if not provided
         if self.evaluator_llm is None:
             self.evaluator_llm = LLMLiteLLM.from_config(
-                provider="openai",
-                model_name=self.evaluator_model,
+                provider=self.evaluator_model["provider"],
+                model_name=self.evaluator_model["model"],
+                api_key=self.evaluator_model.get("api_key"),
+                api_base=self.evaluator_model.get("api_base"),
                 temperature=0.0,
                 max_tokens=10
             )
@@ -310,6 +308,7 @@ SCORE: {score}"""
             self.target_llm = LLMLiteLLM.from_config(
                 provider=self.target_provider,
                 model_name=self.target_model,
+                api_key=self.target_api_key,
                 api_base=self.target_api_base,
                 temperature=0.0,
                 max_tokens=150

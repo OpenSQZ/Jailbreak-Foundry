@@ -35,6 +35,9 @@ export AWS_BEARER_TOKEN_BEDROCK=""
 export GOOGLE_APPLICATION_CREDENTIALS=""
 export GOOGLE_CLOUD_PROJECT=""  # Optional, has default value
 export GOOGLE_CLOUD_LOCATION="us-central1"  # Optional, has default value
+export GOOGLE_API_KEY=""
+
+export CURSOR_API_KEY=""
 
 # Optional: Other provider API keys
 # export ANTHROPIC_API_KEY=""

@@ -40,8 +40,8 @@ MINOR DIFFERENCES (no ASR impact expected):
 """
 
 from typing import Dict, Any, Optional, List
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class AirGen(ModernBaseAttack):

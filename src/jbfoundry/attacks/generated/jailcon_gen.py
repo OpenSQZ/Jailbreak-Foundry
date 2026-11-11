@@ -16,8 +16,8 @@ from typing import Dict, Any, Optional, List
 import random
 import re
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...dataset.jbb_behaviors_loader import JBBBehaviorsLoader
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.dataset.jbb_behaviors_loader import JBBBehaviorsLoader
 
 
 class JailConAttack(ModernBaseAttack):

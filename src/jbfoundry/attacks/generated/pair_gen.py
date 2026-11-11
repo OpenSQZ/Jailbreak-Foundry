@@ -15,8 +15,8 @@ import json
 import re
 import logging
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -56,17 +56,10 @@ class PAIRAttack(ModernBaseAttack):
         ),
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use as the attacker LLM",
             cli_arg="--attack_model"
-        ),
-        "attack_provider": AttackParameter(
-            name="attack_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the attacker model",
-            cli_arg="--attack_provider"
         ),
         "attack_max_tokens": AttackParameter(
             name="attack_max_tokens",
@@ -91,17 +84,10 @@ class PAIRAttack(ModernBaseAttack):
         ),
         "judge_model": AttackParameter(
             name="judge_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use as the judge",
             cli_arg="--judge_model"
-        ),
-        "judge_provider": AttackParameter(
-            name="judge_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the judge model",
-            cli_arg="--judge_provider"
         ),
         "judge_max_tokens": AttackParameter(
             name="judge_max_tokens",
@@ -133,17 +119,10 @@ class PAIRAttack(ModernBaseAttack):
         ),
         "target_model": AttackParameter(
             name="target_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Target model to jailbreak during optimization",
             cli_arg="--target_model"
-        ),
-        "target_provider": AttackParameter(
-            name="target_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for target model",
-            cli_arg="--target_provider"
         ),
         "target_temperature": AttackParameter(
             name="target_temperature",
@@ -193,11 +172,12 @@ class PAIRAttack(ModernBaseAttack):
         # Paper/Reference: Uses Mixtral-8x7B or similar open models
         # Framework: Uses gpt-4o-mini for accessibility (configurable via --attack_model)
         attack_model = self.get_parameter_value("attack_model")
-        attack_provider = self.get_parameter_value("attack_provider")
         attack_top_p = self.get_parameter_value("attack_top_p")
         self.attacker_llm = LLMLiteLLM.from_config(
-            model_name=attack_model,
-            provider=attack_provider,
+            model_name=attack_model["model"],
+            provider=attack_model["provider"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base"),
             temperature=self.get_parameter_value("attack_temperature"),
             max_tokens=self.get_parameter_value("attack_max_tokens"),
             top_p=attack_top_p,
@@ -209,10 +189,12 @@ class PAIRAttack(ModernBaseAttack):
         # Framework: Uses gpt-3.5-turbo for accessibility (configurable via --target_model)
         target_model = self.args.model
         target_provider = self.args.provider
+        target_api_key = self.args.api_key
         target_api_base = self.args.api_base
         self.target_llm = LLMLiteLLM.from_config(
             model_name=target_model,
             provider=target_provider,
+            api_key=target_api_key,
             api_base=target_api_base,
             temperature=self.get_parameter_value("target_temperature"),
             max_tokens=self.get_parameter_value("target_max_tokens"),
@@ -223,16 +205,17 @@ class PAIRAttack(ModernBaseAttack):
         # Paper/Reference: Uses Llama-Guard, GCG, or JailbreakBench judges
         # Framework: Uses gpt-4o-mini as LLM judge (configurable via --judge_model)
         judge_model = self.get_parameter_value("judge_model")
-        judge_provider = self.get_parameter_value("judge_provider")
         self.judge_llm = LLMLiteLLM.from_config(
-            model_name=judge_model,
-            provider=judge_provider,
+            model_name=judge_model["model"],
+            provider=judge_model["provider"],
+            api_key=judge_model.get("api_key"),
+            api_base=judge_model.get("api_base"),
             temperature=self.get_parameter_value("judge_temperature"),
             max_tokens=self.get_parameter_value("judge_max_tokens"),
             seed=seed,
         )
         
-        logger.info(f"Initialized PAIR attack with attacker={attack_provider}/{attack_model}, target={target_provider}/{target_model}, judge={judge_provider}/{judge_model}, seed={seed}")
+        logger.info(f"Initialized PAIR attack with attacker={attack_model['provider']}/{attack_model['model']}, target={target_provider}/{target_model}, judge={judge_model['provider']}/{judge_model['model']}, seed={seed}")
     
     def _get_system_prompts(self, goal: str, target_str: str) -> List[str]:
         """

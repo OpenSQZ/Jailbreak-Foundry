@@ -115,6 +115,37 @@ class CostTracker:
             "totals": self.get_total_costs()
         }
 
+    def aggregate_into(self, target_dict: Dict[str, Any]) -> None:
+        """
+        Aggregate this tracker's costs into a target dictionary.
+
+        Args:
+            target_dict: Dictionary with structure:
+                {"by_model": {...}, "totals": {...}}
+        """
+        summary = self.get_summary()
+
+        # Aggregate by-model costs
+        for model_name, model_costs in summary.get("by_model", {}).items():
+            if model_name not in target_dict["by_model"]:
+                target_dict["by_model"][model_name] = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                    "reasoning_tokens": 0
+                }
+            target_dict["by_model"][model_name]["prompt_tokens"] += model_costs.get("prompt_tokens", 0)
+            target_dict["by_model"][model_name]["completion_tokens"] += model_costs.get("completion_tokens", 0)
+            target_dict["by_model"][model_name]["total_tokens"] += model_costs.get("total_tokens", 0)
+            target_dict["by_model"][model_name]["reasoning_tokens"] += model_costs.get("reasoning_tokens", 0)
+
+        # Aggregate totals
+        totals = summary.get("totals", {})
+        target_dict["totals"]["prompt_tokens"] += totals.get("prompt_tokens", 0)
+        target_dict["totals"]["completion_tokens"] += totals.get("completion_tokens", 0)
+        target_dict["totals"]["total_tokens"] += totals.get("total_tokens", 0)
+        target_dict["totals"]["reasoning_tokens"] += totals.get("reasoning_tokens", 0)
+
     def reset(self) -> None:
         """Reset all tracked costs to zero."""
         with self._lock:

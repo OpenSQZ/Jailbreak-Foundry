@@ -1,581 +1,691 @@
-import requests
+import argparse
 import base64
 import json
-import math
-import argparse
 import os
+import re
 import shutil
-from pathlib import Path
-from PyPDF2 import PdfReader, PdfWriter
 from io import BytesIO
-from google.oauth2 import service_account
-from google.auth.transport.requests import Request
+from pathlib import Path
+from typing import Optional
 
-# TODO(developer): Update these values for your project
-MISTRAL_MODEL_ID = "mistral-ocr-2505"
-GEMINI_MODEL_ID = "gemini-2.5-pro"
-PROJECT_ID = "nova-gemini-250403"
-REGION = "us-central1"
+from openai import OpenAI
+from PyPDF2 import PdfReader, PdfWriter
 
-class VertexAIOCR:
-    """Base class for Vertex AI OCR operations using service account authentication."""
+# Default model ID
+# DEFAULT_MODEL = "bh/gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini-3.1-pro-preview"
 
-    def __init__(self, model_id, project_id, service_account_path):
-        self.model_id = model_id
-        self.project_id = project_id
-        self.service_account_path = service_account_path
-        self.credentials = None
+# LiteLLM proxy settings
+# DEFAULT_BASE_URL = "https://router.ai.iiis.co:9443/v1"
+DEFAULT_BASE_URL = "https://api.wenwen-ai.com/v1"
 
-        # Load credentials from service account JSON file
-        if not service_account_path:
-            raise ValueError("Service account JSON file path is required")
-        self._load_credentials()
+DEFAULT_API_KEY_ENV = "WENWEN_API_KEY"
 
-    def _load_credentials(self):
-        """Load service account credentials from JSON file."""
-        try:
-            with open(self.service_account_path, "r") as f:
-                service_account_info = json.load(f)
 
-            self.credentials = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
-            )
-            print(f"Loaded service account credentials from {self.service_account_path}")
-        except Exception as e:
-            print(f"Error loading service account credentials: {e}")
-            raise
+# ---------------------------------------------------------------------------
+# Eligibility check prompts
+# ---------------------------------------------------------------------------
 
-    def get_access_token(self):
-        """获取Google Cloud访问令牌"""
-        try:
-            # Refresh credentials to get access token
-            self.credentials.refresh(Request())
-            return self.credentials.token
-        except Exception as e:
-            print(f"Error getting access token from service account: {e}")
-            return None
+ABSTRACT_TRIAGE_PROMPT = """\
+You are an expert classifier for jailbreak attack research papers.
 
-    def prepare_ocr_payload(self, base64_pdf_content):
-        """Prepare OCR payload. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement prepare_ocr_payload()")
+Based ONLY on the title and abstract below, determine whether this paper proposes a NEW jailbreak attack method that is:
+1. A jailbreak attack on LLMs (not defense, not survey, not benchmark)
+2. Black-box (only needs API access, no gradients/weights/logits)
+3. Text-only (not vision, not audio, not multimodal)
+4. Practical to run on CPU (no GPU/training required from reading the abstract)
 
-    def send_ocr_request(self, payload):
-        """Send OCR request. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement send_ocr_request()")
+Title: {title}
 
-    def extract_text(self, response):
-        """Extract text from response. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement extract_text()")
+Abstract: {abstract}
 
-class MistralOCR(VertexAIOCR):
-    """Handles Vertex AI Mistral OCR API operations using service account authentication."""
+Respond with ONLY a JSON object:
+{{
+  "eligible": true or false,
+  "reason": "one sentence explanation"
+}}
+"""
 
-    def __init__(self, model_id=MISTRAL_MODEL_ID, project_id=PROJECT_ID, region=REGION, service_account_path=None):
-        super().__init__(model_id, project_id, service_account_path)
-        self.region = region
+DEEP_TRIAGE_PROMPT = """\
+You are an expert classifier for jailbreak attack research papers.
 
-    def prepare_ocr_payload(self, base64_pdf_content):
-        """
-        准备Vertex AI Mistral OCR API请求体
-        
-        Args:
-            base64_pdf_content (str): Base64编码的PDF内容
-        
-        Returns:
-            dict: 请求体字典
-        """
-        payload = {
-            "model": self.model_id,
-            "document": {
-                "type": "document_url",
-                "document_url": f"data:application/pdf;base64,{base64_pdf_content}"
-            },
-            "include_image_base64": True,
-        }
-        return payload
+You are given the first 8 pages of a paper. Determine whether this paper's proposed attack method is PRACTICALLY CPU-runnable in a black-box text-only setting.
 
-    def send_ocr_request(self, payload):
-        """
-        发送OCR请求到Vertex AI Mistral OCR API
-        
-        Args:
-            payload (dict): 请求体
-        
-        Returns:
-            dict: 解析后的JSON响应，如果失败则返回None
-        """
-        try:
-            # 获取访问令牌
-            access_token = self.get_access_token()
-            if not access_token:
-                print("Failed to get access token")
-                return None
-            
-            # 构建请求URL
-            url = f"https://{self.region}-aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{self.region}/publishers/mistralai/models/{self.model_id}:rawPredict"
-            
-            # 构建请求头
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
-            
-            # 发送请求
-            print("正在发送OCR请求到Vertex AI Mistral OCR API...")
-            response = requests.post(url=url, headers=headers, json=payload)
-            
-            if response.status_code == 200:
-                try:
-                    response_dict = response.json()
-                    print("OCR请求成功完成")
-                    return response_dict
-                except json.JSONDecodeError as e:
-                    print("Error decoding JSON:", e)
-                    print("Raw response:", response.text)
-                    return None
-            else:
-                print(f"Request failed with status code: {response.status_code}")
-                print("Response text:", response.text)
-                return None
-                
-        except Exception as e:
-            print(f"Error sending OCR request: {e}")
-            return None
+Specifically, check for these DISQUALIFYING signals:
+- Uses transformers library to load or run a local model (e.g., for perplexity filtering, token scoring)
+- Requires torch/cuda for any part of the attack pipeline
+- Needs to calculate perplexity, token probabilities, or embeddings locally
+- Requires fine-tuning or training any model
+- Needs gradient computation or backpropagation
+- Requires vision/audio/multimodal inputs
+- Only works with white-box/gray-box access (needs logits, hidden states, model internals)
+- Requires running inference on a local LLM (not via API)
 
-    def extract_text(self, response):
-        """
-        Extract markdown text from Mistral OCR response
+Note: Using an external LLM API (like OpenAI, Claude, etc.) for generation/scoring IS acceptable and counts as CPU-runnable.
 
-        Args:
-            response (dict): Mistral OCR API response
+Respond with ONLY a JSON object:
+{{
+  "eligible": true or false,
+  "reason": "one sentence explanation",
+  "disqualifying_signals": ["list of signals found, if any"]
+}}
+"""
 
-        Returns:
-            str: Extracted markdown text
-        """
-        if not response or 'pages' not in response:
-            return ""
-        return "".join([page["markdown"] for page in response["pages"]])
 
-class GeminiOCR(VertexAIOCR):
-    """Handles Vertex AI Gemini 2.5 Pro API operations using service account authentication."""
+# ---------------------------------------------------------------------------
+# LLM Client
+# ---------------------------------------------------------------------------
 
-    def __init__(self, model_id=GEMINI_MODEL_ID, project_id=PROJECT_ID, service_account_path=None):
-        super().__init__(model_id, project_id, service_account_path)
+class LLMClient:
+    """Thin wrapper around OpenAI-compatible API for triage and OCR."""
 
-    def prepare_ocr_payload(self, base64_pdf_content):
-        """
-        准备Vertex AI Gemini API请求体
+    def __init__(self, model: str = DEFAULT_MODEL, api_key: Optional[str] = None, base_url: Optional[str] = None):
+        api_key = api_key or os.environ.get(DEFAULT_API_KEY_ENV)
+        if not api_key:
+            raise ValueError(f"{DEFAULT_API_KEY_ENV} environment variable not set")
+        base_url = base_url or DEFAULT_BASE_URL
 
-        Args:
-            base64_pdf_content (str): Base64编码的PDF内容
+        self.model = model
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        print(f"LLM client initialized: model={self.model} base_url={base_url}")
 
-        Returns:
-            dict: 请求体字典
-        """
-        payload = {
-            "contents": {
-                "role": "user",
-                "parts": [
-                    {
-                        "inlineData": {
-                            "mimeType": "application/pdf",
-                            "data": base64_pdf_content
-                        }
-                    },
-                    {
-                        "text": "Extract all text from this PDF document and format it in markdown. Preserve the document structure, headings, tables, and formatting."
-                    }
-                ]
-            }
-        }
-        return payload
+    def chat(self, messages: list) -> str:
+        """Send chat completion and return content."""
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+        )
+        return response.choices[0].message.content
 
-    def send_ocr_request(self, payload):
-        """
-        发送OCR请求到Vertex AI Gemini API
+    def chat_with_pdf(self, pdf_bytes: bytes, text_prompt: str) -> str:
+        """Send chat completion with inline PDF data."""
+        chunk_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "paper.pdf",
+                                "file_data": f"data:application/pdf;base64,{chunk_base64}",
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": text_prompt,
+                        },
+                    ],
+                }
+            ],
+        )
+        return response.choices[0].message.content
 
-        Args:
-            payload (dict): 请求体
 
-        Returns:
-            dict: 解析后的JSON响应，如果失败则返回None
-        """
-        try:
-            # 获取访问令牌
-            access_token = self.get_access_token()
-            if not access_token:
-                print("Failed to get access token")
-                return None
+# ---------------------------------------------------------------------------
+# Eligibility checks
+# ---------------------------------------------------------------------------
 
-            # 构建请求URL - Note: Gemini uses 'global' location
-            url = f"https://aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/global/publishers/google/models/{self.model_id}:streamGenerateContent"
+class EligibilityError(Exception):
+    """Raised when a paper fails eligibility checks."""
+    pass
 
-            # 构建请求头
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
 
-            # 发送请求
-            print("正在发送OCR请求到Vertex AI Gemini API...")
-            response = requests.post(url=url, headers=headers, json=payload)
+def _parse_json_response(text: str) -> dict:
+    """Extract JSON object from LLM response."""
+    # Try to find JSON in markdown code block
+    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    # Try raw JSON
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    if match:
+        return json.loads(match.group(0))
+    raise ValueError(f"Could not parse JSON from response: {text[:200]}")
 
-            if response.status_code == 200:
-                try:
-                    response_dict = response.json()
-                    print("OCR请求成功完成")
-                    return response_dict
-                except json.JSONDecodeError as e:
-                    print("Error decoding JSON:", e)
-                    print("Raw response:", response.text)
-                    return None
-            else:
-                print(f"Request failed with status code: {response.status_code}")
-                print("Response text:", response.text)
-                return None
 
-        except Exception as e:
-            print(f"Error sending OCR request: {e}")
-            return None
+def _collapse_whitespace(text: str) -> str:
+    """Normalize whitespace from arXiv XML/HTML fields."""
+    return re.sub(r"\s+", " ", text).strip()
 
-    def extract_text(self, response):
-        """
-        Extract text from Gemini API streaming response
 
-        Args:
-            response (list): Gemini API streaming response (list of chunks)
+def _strip_html(html_text: str) -> str:
+    """Extract readable text from a small arXiv HTML fragment."""
+    import html
 
-        Returns:
-            str: Extracted text
-        """
-        if not response:
-            return ""
+    text = re.sub(r"<(script|style)\b.*?</\1>", " ", html_text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return _collapse_whitespace(html.unescape(text))
 
-        full_text = ""
-        for chunk in response:
-            if 'candidates' in chunk and len(chunk['candidates']) > 0:
-                candidate = chunk['candidates'][0]
-                if 'content' in candidate and 'parts' in candidate['content']:
-                    for part in candidate['content']['parts']:
-                        if 'text' in part:
-                            full_text += part['text']
-        return full_text
+
+def _fetch_arxiv_metadata_from_api(arxiv_id: str) -> tuple[str, str]:
+    """Fetch title and abstract through the official arXiv Atom API."""
+    import urllib.request
+    import xml.etree.ElementTree as ET
+
+    url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
+    print(f"  Fetching arxiv metadata: {url}")
+
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "autojailbreak-paper-preprocessor/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as resp:
+        xml_data = resp.read().decode("utf-8")
+
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    root = ET.fromstring(xml_data)
+    entry = root.find("atom:entry", ns)
+
+    if entry is None:
+        raise EligibilityError(f"Paper {arxiv_id} not found on arXiv")
+
+    title_el = entry.find("atom:title", ns)
+    abstract_el = entry.find("atom:summary", ns)
+    if title_el is None or abstract_el is None or not title_el.text or not abstract_el.text:
+        raise EligibilityError(f"Paper {arxiv_id} metadata is incomplete")
+
+    return _collapse_whitespace(title_el.text), _collapse_whitespace(abstract_el.text)
+
+
+def _fetch_arxiv_metadata_from_abs_page(arxiv_id: str) -> tuple[str, str]:
+    """Fetch title and abstract from https://arxiv.org/abs/{id}."""
+    import urllib.request
+
+    url = f"https://arxiv.org/abs/{arxiv_id}"
+    print(f"  Fetching arxiv abs page metadata: {url}")
+
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "autojailbreak-paper-preprocessor/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as resp:
+        page = resp.read().decode("utf-8", errors="replace")
+
+    title_match = re.search(
+        r'<h1\s+class="title\s+mathjax">(.*?)</h1>',
+        page,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    abstract_match = re.search(
+        r'<blockquote\s+class="abstract\s+mathjax">(.*?)</blockquote>',
+        page,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    if not title_match or not abstract_match:
+        raise EligibilityError(f"Paper {arxiv_id} metadata not found on arXiv abs page")
+
+    title = _strip_html(title_match.group(1))
+    abstract = _strip_html(abstract_match.group(1))
+    title = re.sub(r"^Title:\s*", "", title, flags=re.IGNORECASE).strip()
+    abstract = re.sub(r"^Abstract:\s*", "", abstract, flags=re.IGNORECASE).strip()
+
+    if not title or not abstract:
+        raise EligibilityError(f"Paper {arxiv_id} metadata is incomplete on arXiv abs page")
+
+    return title, abstract
+
+
+def fetch_arxiv_metadata(arxiv_id: str) -> tuple[str, str]:
+    """Fetch title and abstract, falling back to the abs page when the API is rate-limited."""
+    try:
+        return _fetch_arxiv_metadata_from_api(arxiv_id)
+    except EligibilityError:
+        raise
+    except Exception as exc:
+        print(f"  ⚠️  arXiv API metadata fetch failed ({type(exc).__name__}: {exc}); trying abs page")
+        return _fetch_arxiv_metadata_from_abs_page(arxiv_id)
+
+
+def check_abstract_eligibility(client: LLMClient, arxiv_id: str) -> dict:
+    """
+    Step 1: Fetch arxiv abstract and check basic eligibility.
+
+    Returns:
+        dict with 'eligible' (bool) and 'reason' (str)
+
+    Raises:
+        EligibilityError: If paper is not eligible
+    """
+    print(f"\n{'='*60}")
+    print("STEP 1: Abstract eligibility check")
+    print(f"{'='*60}")
+
+    title, abstract = fetch_arxiv_metadata(arxiv_id)
+
+    print(f"  Title: {title}")
+    print(f"  Abstract: {abstract[:150]}...")
+
+    # Query LLM
+    prompt = ABSTRACT_TRIAGE_PROMPT.format(title=title, abstract=abstract)
+    print(f"  Querying {client.model} for abstract triage...")
+
+    response_text = client.chat([{"role": "user", "content": prompt}])
+    result = _parse_json_response(response_text)
+
+    print(f"  Result: eligible={result.get('eligible')} reason={result.get('reason')}")
+
+    if not result.get("eligible"):
+        raise EligibilityError(
+            f"Paper {arxiv_id} failed abstract triage: {result.get('reason')}"
+        )
+
+    return result
+
+
+def check_deep_eligibility(client: LLMClient, pdf_path: Path) -> dict:
+    """
+    Step 2: Send first 8 pages of PDF to verify CPU-runnability.
+
+    Returns:
+        dict with 'eligible' (bool), 'reason' (str), 'disqualifying_signals' (list)
+
+    Raises:
+        EligibilityError: If paper is not eligible
+    """
+    print(f"\n{'='*60}")
+    print("STEP 2: Deep eligibility check (first 8 pages)")
+    print(f"{'='*60}")
+
+    # Extract first 8 pages
+    with open(pdf_path, 'rb') as f:
+        pdf_content = f.read()
+
+    reader = PdfReader(BytesIO(pdf_content))
+    total_pages = len(reader.pages)
+    pages_to_check = min(8, total_pages)
+
+    writer = PdfWriter()
+    for i in range(pages_to_check):
+        writer.add_page(reader.pages[i])
+
+    pdf_output = BytesIO()
+    writer.write(pdf_output)
+    chunk_bytes = pdf_output.getvalue()
+
+    chunk_base64_mb = len(base64.b64encode(chunk_bytes)) / (1024 * 1024)
+    print(f"  Sending {pages_to_check}/{total_pages} pages ({chunk_base64_mb:.1f} MB base64)")
+    print(f"  Querying {client.model} for deep triage...")
+
+    response_text = client.chat_with_pdf(chunk_bytes, DEEP_TRIAGE_PROMPT)
+    result = _parse_json_response(response_text)
+
+    signals = result.get("disqualifying_signals", [])
+    print(f"  Result: eligible={result.get('eligible')} reason={result.get('reason')}")
+    if signals:
+        print(f"  Disqualifying signals: {signals}")
+
+    if not result.get("eligible"):
+        raise EligibilityError(
+            f"Paper failed deep triage: {result.get('reason')} "
+            f"Signals: {signals}"
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# PDF processing (OCR)
+# ---------------------------------------------------------------------------
 
 class PDFProcessor:
-    """Handles PDF downloading, processing, and chunking operations."""
-    
-    MAX_BASE64_SIZE_MB = 30
-    MAX_PAGES_PER_CHUNK = 30
-    
+    """Handles PDF analysis and chunking operations."""
+
+    MAX_BASE64_SIZE_MB = 5
+    MAX_PAGES_PER_CHUNK = 10
+
+    def analyze_pdf(self, pdf_path: Path):
+        """Analyze PDF to determine if chunking is needed."""
+        try:
+            with open(pdf_path, 'rb') as f:
+                pdf_content = f.read()
+
+            reader = PdfReader(BytesIO(pdf_content))
+            total_pages = len(reader.pages)
+
+            full_base64 = base64.b64encode(pdf_content).decode('utf-8')
+            base64_size_mb = len(full_base64) / (1024 * 1024)
+
+            print(f"PDF Analysis:")
+            print(f"  Total pages: {total_pages}")
+            print(f"  Base64 size: {base64_size_mb:.2f} MB")
+
+            reasons = []
+            if base64_size_mb > self.MAX_BASE64_SIZE_MB:
+                reasons.append(f"size > {self.MAX_BASE64_SIZE_MB}MB")
+            if total_pages > self.MAX_PAGES_PER_CHUNK:
+                reasons.append(f"pages > {self.MAX_PAGES_PER_CHUNK}")
+
+            needs_chunking = len(reasons) > 0
+            reason = " and ".join(reasons) if reasons else None
+
+            return needs_chunking, total_pages, base64_size_mb, reason
+
+        except Exception as e:
+            print(f"Error analyzing PDF: {e}")
+            return False, 0, 0, None
+
     def find_optimal_chunk_size(self, reader, start_page, max_pages):
-        """
-        Use binary search to find the maximum number of pages that fit in a <30MB chunk.
-        
-        Args:
-            reader: PdfReader object
-            start_page: Starting page index
-            max_pages: Maximum pages to consider
-        
-        Returns:
-            int: Optimal number of pages for this chunk
-        """
+        """Binary search for max pages fitting in size limit."""
         left, right = 1, max_pages
         best_pages = 1
-        
+
         while left <= right:
             mid = (left + right) // 2
             end_page = start_page + mid
-            
-            # Create test chunk
+
             writer = PdfWriter()
             for page_num in range(start_page, end_page):
                 writer.add_page(reader.pages[page_num])
-            
+
             pdf_output = BytesIO()
             writer.write(pdf_output)
             pdf_output.seek(0)
-            
+
             chunk_base64 = base64.b64encode(pdf_output.read()).decode('utf-8')
             chunk_size_mb = len(chunk_base64) / (1024 * 1024)
-            
+
             if chunk_size_mb <= self.MAX_BASE64_SIZE_MB:
                 best_pages = mid
                 left = mid + 1
             else:
                 right = mid - 1
-        
+
         return best_pages
 
     def create_pdf_chunk(self, reader, start_page, num_pages):
-        """
-        Create a PDF chunk with specified pages and return base64 encoded string.
-        
-        Args:
-            reader: PdfReader object
-            start_page: Starting page index
-            num_pages: Number of pages to include
-        
-        Returns:
-            tuple: (base64_string, size_in_mb)
-        """
-        end_page = start_page + num_pages
-        writer = PdfWriter()
-        
-        for page_num in range(start_page, end_page):
-            writer.add_page(reader.pages[page_num])
-        
-        pdf_output = BytesIO()
-        writer.write(pdf_output)
-        pdf_output.seek(0)
-        
-        chunk_base64 = base64.b64encode(pdf_output.read()).decode('utf-8')
-        chunk_size_mb = len(chunk_base64) / (1024 * 1024)
-        
-        return chunk_base64, chunk_size_mb
-
-    def load_local_pdf_and_encode(self, pdf_path):
-        """Load a local PDF file and encode it to base64, split into chunks if needed."""
+        """Create a PDF chunk with specified pages in memory."""
         try:
-            # Step 1: Read the local PDF file
+            end_page = start_page + num_pages
+            writer = PdfWriter()
+
+            for page_num in range(start_page, end_page):
+                writer.add_page(reader.pages[page_num])
+
+            pdf_output = BytesIO()
+            writer.write(pdf_output)
+            pdf_output.seek(0)
+
+            chunk_content = pdf_output.read()
+            chunk_base64 = base64.b64encode(chunk_content).decode('utf-8')
+            chunk_size_mb = len(chunk_base64) / (1024 * 1024)
+
+            return chunk_content, chunk_size_mb
+
+        except Exception as e:
+            print(f"Error creating PDF chunk: {e}")
+            return None, 0
+
+    def chunk_pdf(self, pdf_path: Path):
+        """Split PDF into chunks in memory."""
+        try:
             with open(pdf_path, 'rb') as f:
                 pdf_content = f.read()
 
-            print(f"Loaded local PDF from {pdf_path}")
-
-            # Step 2: Load the PDF into memory
-            pdf_data = BytesIO(pdf_content)
-            reader = PdfReader(pdf_data)
-
-            return self._process_pdf_chunks(reader, pdf_content)
-
-        except Exception as e:
-            print(f"Error loading local PDF: {e}")
-            return None
-
-    def download_pdf_and_encode(self, pdf_link, save_pdf=True, pdf_filename=None):
-        """Encode the pdf to base64, split into chunks so each chunk < 30MB and <= 30 pages."""
-        try:
-            # Step 1: Fetch the PDF using requests
-            response = requests.get(pdf_link)
-            response.raise_for_status()
-
-            # Step 1.5: Save the PDF file if requested
-            if save_pdf and pdf_filename:
-                with open(pdf_filename, 'wb') as f:
-                    f.write(response.content)
-                print(f"PDF saved to {pdf_filename}")
-
-            # Step 2: Load the PDF into memory
-            pdf_data = BytesIO(response.content)
-            reader = PdfReader(pdf_data)
-
-            return self._process_pdf_chunks(reader, response.content)
-
-        except Exception as e:
-            print(f"Error: {e}")
-            return None
-
-    def _process_pdf_chunks(self, reader, pdf_content):
-        """Common logic to process PDF chunks."""
-        try:
+            reader = PdfReader(BytesIO(pdf_content))
             total_pages = len(reader.pages)
-            print(f"Total pages: {total_pages}")
 
-            # Step 3: Check if entire PDF is small enough and not too many pages
-            full_base64 = base64.b64encode(pdf_content).decode('utf-8')
-            base64_size_mb = len(full_base64) / (1024 * 1024)
-            print(f"Full PDF base64 size: {base64_size_mb:.2f} MB")
-
-            if base64_size_mb <= self.MAX_BASE64_SIZE_MB and total_pages <= self.MAX_PAGES_PER_CHUNK:
-                return [full_base64]
-
-            # Step 4: Dynamic chunking
-            reason = []
-            if base64_size_mb > self.MAX_BASE64_SIZE_MB:
-                reason.append("size > 30MB")
-            if total_pages > self.MAX_PAGES_PER_CHUNK:
-                reason.append("pages > 30")
-            print(f"Using dynamic chunking due to {' and '.join(reason)}...")
             chunks = []
             current_page = 0
+            chunk_num = 1
+
+            print(f"\nChunking PDF in memory...")
 
             while current_page < total_pages:
                 remaining_pages = total_pages - current_page
                 max_pages_for_this_chunk = min(remaining_pages, self.MAX_PAGES_PER_CHUNK)
 
-                # Find optimal chunk size for current position (respect page and size limits)
                 optimal_pages = self.find_optimal_chunk_size(reader, current_page, max_pages_for_this_chunk)
 
-                # Create the chunk
-                chunk_base64, chunk_size_mb = self.create_pdf_chunk(reader, current_page, optimal_pages)
+                chunk_bytes, chunk_size_mb = self.create_pdf_chunk(
+                    reader, current_page, optimal_pages
+                )
 
-                print(f"Chunk {len(chunks)+1}: pages {current_page}-{current_page + optimal_pages - 1} ({optimal_pages} pages), size {chunk_size_mb:.2f} MB")
-                chunks.append(chunk_base64)
+                if chunk_bytes:
+                    chunk_info = {
+                        'num': chunk_num,
+                        'start_page': current_page + 1,
+                        'end_page': current_page + optimal_pages,
+                        'num_pages': optimal_pages,
+                        'size_mb': chunk_size_mb
+                    }
+                    print(f"  Chunk {chunk_num}: pages {chunk_info['start_page']}-{chunk_info['end_page']} ({optimal_pages} pages), size {chunk_size_mb:.2f} MB")
+                    chunks.append((chunk_bytes, chunk_info))
+                    current_page += optimal_pages
+                    chunk_num += 1
+                else:
+                    print(f"  Failed to create chunk {chunk_num}")
+                    break
 
-                current_page += optimal_pages
-
-            print(f"Created {len(chunks)} chunks total")
+            print(f"Created {len(chunks)} chunks total\n")
             return chunks
 
         except Exception as e:
-            print(f"Error processing PDF chunks: {e}")
-            return None
+            print(f"Error chunking PDF: {e}")
+            return []
+
+
+def run_ocr(client: LLMClient, pdf_path: Path) -> str:
+    """
+    Step 3: Full OCR of the PDF with chunking as needed.
+
+    Returns:
+        Full markdown text
+    """
+    print(f"\n{'='*60}")
+    print("STEP 3: Full OCR")
+    print(f"{'='*60}")
+
+    pdf_processor = PDFProcessor()
+    needs_chunking, total_pages, size_mb, reason = pdf_processor.analyze_pdf(pdf_path)
+
+    ocr_prompt = (
+        "Extract all text from this PDF document and format it in markdown. "
+        "Preserve the document structure, headings, tables, and formatting. "
+        "IMPORTANT: Preserve all footnotes and endnotes. Where a footnote contains a URL, "
+        "inline the URL directly in the text at the reference point as a markdown link "
+        "(e.g. [text](https://...)). Do not drop footnote content or URLs."
+    )
+
+    if needs_chunking:
+        print(f"  ⚠ Chunking required: {reason}")
+
+        chunks = pdf_processor.chunk_pdf(pdf_path)
+        if not chunks:
+            raise RuntimeError("Failed to chunk PDF")
+
+        print(f"Processing {len(chunks)} chunks...")
+        all_markdown = []
+
+        for chunk_bytes, chunk_info in chunks:
+            print(f"\n  Chunk {chunk_info['num']}/{len(chunks)}:")
+            chunk_markdown = client.chat_with_pdf(chunk_bytes, ocr_prompt)
+            if chunk_markdown:
+                all_markdown.append(chunk_markdown)
+                print(f"  ✓ {len(chunk_markdown)} chars")
+            else:
+                print(f"  ⚠ Warning: Failed to process chunk {chunk_info['num']}")
+
+        if not all_markdown:
+            raise RuntimeError("Failed to extract text from any chunks")
+
+        return "\n\n".join(all_markdown)
+
+    else:
+        print(f"  ✓ No chunking needed - processing entire PDF")
+
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+
+        full_markdown = client.chat_with_pdf(pdf_bytes, ocr_prompt)
+        if not full_markdown:
+            raise RuntimeError("Failed to extract text from PDF")
+
+        print(f"  ✓ {len(full_markdown)} chars extracted")
+        return full_markdown
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 def parse_arguments():
-    """
-    Parse command line arguments
-    
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Process PDF papers using Vertex AI OCR (Gemini or Mistral)",
+        description="Process PDF papers with eligibility triage and optional OCR",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Pipeline:
+  1. Fetch arXiv abstract → LLM triage (is it a black-box text-only jailbreak?)
+  2. Download PDF, send first 8 pages → LLM deep triage (CPU-runnable?)
+  3. Full OCR with chunking unless --skip-ocr is set
+
 Examples:
-  python paper_preprocessor.py --arxiv-id "2505.10066" --service-account "path/to/service-account.json"
-  python paper_preprocessor.py --arxiv-id "2505.10066" --service-account "path/to/service-account.json" --model mistral
-  python paper_preprocessor.py --pdf-link "https://arxiv.org/pdf/2505.10066" --service-account "path/to/service-account.json"
-  python paper_preprocessor.py --local-pdf "path/to/paper.pdf" --service-account "path/to/service-account.json"
+  python paper_preprocessor.py --arxiv-id "2505.10066"
+  python paper_preprocessor.py --arxiv-id "2505.10066" --skip-ocr
+  python paper_preprocessor.py --arxiv-id "2505.10066" --skip-triage
+  python paper_preprocessor.py --local-pdf "path/to/paper.pdf" --skip-abstract-triage
+
+Note: Requires WENWEN_API_KEY unless both --skip-triage and --skip-ocr are set.
         """
     )
-    
-    # Create mutually exclusive group for PDF link, arXiv ID, or local PDF
+
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--pdf-link",
-        type=str,
-        help="Direct PDF download link"
-    )
-    group.add_argument(
-        "--arxiv-id",
-        type=str,
-        help="arXiv paper ID (e.g., '2505.10066' or 'arxiv:2505.10066')"
-    )
-    group.add_argument(
-        "--local-pdf",
-        type=str,
-        help="Path to local PDF file"
-    )
-    
-    parser.add_argument(
-        "--service-account",
-        type=str,
-        required=True,
-        help="Path to Google Cloud service account JSON file for authentication (required)"
-    )
+    group.add_argument("--pdf-link", type=str, help="Direct PDF download link")
+    group.add_argument("--arxiv-id", type=str, help="arXiv paper ID (e.g., '2505.10066')")
+    group.add_argument("--local-pdf", type=str, help="Path to local PDF file")
 
     parser.add_argument(
-        "--model",
-        type=str,
-        choices=["mistral", "gemini"],
-        default="gemini",
-        help="OCR model to use: 'mistral' for Mistral OCR or 'gemini' for Gemini 2.5 Pro (default: gemini)"
+        "--model", type=str, default=DEFAULT_MODEL,
+        help=f"Model to use for triage and OCR (default: {DEFAULT_MODEL})"
     )
     parser.add_argument(
-        "--output-root",
-        type=str,
-        default="attacks_paper_info",
+        "--output-root", type=str, default="attacks_paper_info",
         help="Root directory to store processed paper assets (default: attacks_paper_info)"
+    )
+    parser.add_argument(
+        "--skip-triage", action="store_true",
+        help="Skip both eligibility checks (abstract and deep)"
+    )
+    parser.add_argument(
+        "--skip-abstract-triage", action="store_true",
+        help="Skip abstract triage only (still run deep triage on PDF)"
+    )
+    parser.add_argument(
+        "--skip-ocr", action="store_true",
+        help="Download and triage the PDF, but do not create OCR markdown"
     )
 
     return parser.parse_args()
 
+
 if __name__ == "__main__":
-    # Parse command line arguments
+    import requests
+
     args = parse_arguments()
 
-    # Determine PDF source and ID based on input
+    # Determine PDF source and ID
     if args.local_pdf:
-        # Use local PDF file
-        local_pdf_path = Path(args.local_pdf).resolve()
-        if not local_pdf_path.exists():
-            print(f"Error: Local PDF file not found: {local_pdf_path}")
+        pdf_path = Path(args.local_pdf).resolve()
+        if not pdf_path.exists():
+            print(f"Error: Local PDF file not found: {pdf_path}")
             exit(1)
-
-        pdf_id = local_pdf_path.stem  # Use filename without extension as ID
-        pdf_source = str(local_pdf_path)
-        is_local = True
-        print(f"Processing local PDF: {pdf_source}")
+        pdf_id = pdf_path.stem
+        arxiv_id = None
+        print(f"Processing local PDF: {pdf_path}")
     elif args.pdf_link:
-        pdf_link = args.pdf_link
-        pdf_id = pdf_link.split("/")[-1]
-        pdf_source = pdf_link
-        is_local = False
-        print(f"Processing PDF from URL: {pdf_source}")
-    else:  # args.arxiv_id
-        pdf_link = f"https://arxiv.org/pdf/{args.arxiv_id}"
+        pdf_id = args.pdf_link.split("/")[-1].replace(".pdf", "")
+        arxiv_id = pdf_id
+        pdf_path = None
+        print(f"Processing PDF from URL: {args.pdf_link}")
+    else:
         pdf_id = args.arxiv_id
-        pdf_source = pdf_link
-        is_local = False
-        print(f"Processing arXiv PDF: {pdf_source}")
+        arxiv_id = args.arxiv_id
+        pdf_path = None
+        print(f"Processing arXiv PDF: {pdf_id}")
 
-    # Initialize processors
-    pdf_processor = PDFProcessor()
+    # Initialize LLM client only when triage or OCR will call the model.
+    client = LLMClient(model=args.model) if (not args.skip_triage or not args.skip_ocr) else None
 
-    # Initialize OCR client based on model choice
-    if args.model == "mistral":
-        print(f"Using Mistral OCR model")
-        ocr_client = MistralOCR(service_account_path=args.service_account)
-    else:  # gemini
-        print(f"Using Gemini 2.5 Pro model")
-        ocr_client = GeminiOCR(service_account_path=args.service_account)
+    # --- Step 1: Abstract triage ---
+    if arxiv_id and not args.skip_triage and not args.skip_abstract_triage:
+        try:
+            assert client is not None
+            check_abstract_eligibility(client, arxiv_id)
+        except EligibilityError as e:
+            print(f"\n❌ REJECTED: {e}")
+            exit(4)  # Exit code 4 = ineligible paper (CPU impractical / not a jailbreak)
+    else:
+        if args.skip_triage or args.skip_abstract_triage:
+            print("\n⏭️  Skipping abstract triage")
+        elif not arxiv_id:
+            print("\n⏭️  No arXiv ID available, skipping abstract triage")
 
-    # Create directory structure
-    # Find project root (where .git directory is located)
+    # --- Download PDF if needed ---
     script_dir = Path(__file__).resolve().parent
-    project_root = script_dir.parent.parent  # Go up from agents/utils/ to project root
+    project_root = script_dir.parent.parent
     output_dir = project_root / args.output_root / pdf_id
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = str(output_dir)
 
-    # Process the PDF
-    if is_local:
-        # For local PDF, copy it to output directory if not already there
-        pdf_filename = os.path.join(output_dir, f"{pdf_id}.pdf")
-        if os.path.abspath(local_pdf_path) != os.path.abspath(pdf_filename):
-            shutil.copy2(local_pdf_path, pdf_filename)
-            print(f"PDF copied to {pdf_filename}")
+    if not pdf_path:
+        pdf_filename = output_dir / f"{pdf_id}.pdf"
+
+        if args.pdf_link:
+            download_url = args.pdf_link
         else:
-            print(f"PDF already in output directory: {pdf_filename}")
+            download_url = f"https://arxiv.org/pdf/{pdf_id}"
 
-        # Load and encode local PDF
-        chunks = pdf_processor.load_local_pdf_and_encode(local_pdf_path)
+        print(f"\nDownloading PDF to {pdf_filename}...")
+        try:
+            response = requests.get(download_url)
+            response.raise_for_status()
+            with open(pdf_filename, 'wb') as f:
+                f.write(response.content)
+            print(f"✓ PDF saved to {pdf_filename}")
+            pdf_path = pdf_filename
+        except Exception as e:
+            print(f"✗ Error downloading PDF: {e}")
+            exit(1)
     else:
-        # Download and encode PDF from URL
-        pdf_filename = os.path.join(output_dir, f"{pdf_id}.pdf")
-        chunks = pdf_processor.download_pdf_and_encode(pdf_source, save_pdf=True, pdf_filename=pdf_filename)
+        pdf_filename = output_dir / f"{pdf_id}.pdf"
+        if pdf_path.resolve() != pdf_filename.resolve():
+            shutil.copy2(pdf_path, pdf_filename)
+            print(f"PDF copied to {pdf_filename}")
+            pdf_path = pdf_filename
 
-    if not chunks:
-        print("Failed to process PDF")
+    # --- Step 2: Deep triage (first 8 pages) ---
+    if not args.skip_triage:
+        try:
+            assert client is not None
+            check_deep_eligibility(client, pdf_path)
+        except EligibilityError as e:
+            print(f"\n❌ REJECTED: {e}")
+            exit(4)  # Exit code 4 = ineligible paper (CPU impractical / not a jailbreak)
+    else:
+        print("\n⏭️  Skipping deep triage")
+
+    if args.skip_ocr:
+        print(f"\n✓ PDF ready at {pdf_path}")
+        print(f"✓ Skipping OCR; all files saved in directory: {output_dir}")
+        exit(0)
+
+    # --- Step 3: Full OCR ---
+    try:
+        assert client is not None
+        full_markdown = run_ocr(client, pdf_path)
+    except RuntimeError as e:
+        print(f"\n✗ OCR failed: {e}")
         exit(1)
-    
-    responses = []
-    for i, chunk in enumerate(chunks):
-        print(f"Processing chunk {i+1}/{len(chunks)}...")
-        payload = ocr_client.prepare_ocr_payload(chunk)
-        response = ocr_client.send_ocr_request(payload)
-        
-        if not response:
-            print(f"Failed to get OCR response for chunk {i+1}")
-            continue
-        
-        responses.append(response)
-    
-    if not responses:
-        print("Failed to get OCR responses for any chunks")
-        exit(1)
 
-    # Extract markdown content using OCR client's extract_text method
-    full_markdown = "".join([ocr_client.extract_text(response) for response in responses])
-
-    # Save to file
-    output_filename = os.path.join(output_dir, f"{pdf_id}.md")
+    # Save output
+    print(f"\n{'='*60}")
+    output_filename = output_dir / f"{pdf_id}.md"
     with open(output_filename, "w", encoding="utf-8") as f:
         f.write(full_markdown)
-    
-    print(f"OCR result saved to {output_filename}")
-    print(f"All files saved in directory: {output_dir}")
+
+    print(f"✓ OCR result saved to {output_filename}")
+    print(f"✓ All files saved in directory: {output_dir}")
+    print("="*60)

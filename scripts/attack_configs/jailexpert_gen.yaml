@@ -1,0 +1,37 @@
+attack_name: "jailexpert_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4-turbo"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  experience_path: "attacks_paper_info/2508.19292/JailExpert/experience/experiences_examples.json"
+  embedding_model:
+    model: "text-embedding-3-small"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  attack_model:
+    model: "gpt-3.5-turbo"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  n_clusters: 10
+  top_k: 1
+  scalar_weight: 0.1
+  semantic_weight: 0.9

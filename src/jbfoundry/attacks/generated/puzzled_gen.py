@@ -10,8 +10,8 @@ from typing import Dict, Any, Optional, List, Tuple
 import random
 import logging
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +33,8 @@ class PuzzledGen(ModernBaseAttack):
         ),
         "clue_model": AttackParameter(
             name="clue_model",
-            param_type=str,
-            default="gpt-4",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use for generating clues",
             cli_arg="--clue_model"
         ),
@@ -200,7 +200,7 @@ Clue:"""
         # Note: Using try-except here is acceptable because clue generation is a helper task
         # that can fallback to a generic clue without affecting attack fidelity
         try:
-            llm = LLMLiteLLM.from_config(provider="openai", model_name=self.clue_model)
+            llm = LLMLiteLLM.from_config(provider=self.clue_model["provider"], model_name=self.clue_model["model"], api_key=self.clue_model.get("api_key"), api_base=self.clue_model.get("api_base"))
             clue = llm.query(prompt)
             
             # Store in cache

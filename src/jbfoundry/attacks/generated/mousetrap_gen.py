@@ -14,7 +14,7 @@ then presents the chaotic text with decoding instructions in a villain perspecti
 from typing import Dict, Any, Optional, List, Tuple
 import random
 import string
-from ..base import ModernBaseAttack, AttackParameter
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 
 
 class MousetrapAttack(ModernBaseAttack):

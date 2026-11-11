@@ -287,11 +287,12 @@ Thread-safe per-run state using context variables.
 #### Attack Context
 
 ```python
-from src.jbfoundry.attacks.context import AttackContext
+from jbfoundry.attacks.base import AttackPrompt, ModernBaseAttack
+from jbfoundry.attacks.context import AttackContext
 
 # Automatic context wrapping via metaclass
 class MyAttack(ModernBaseAttack):
-    def generate_attack(self, prompt: str, **kwargs) -> str:
+    def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
         # Access context (automatically isolated per request)
         ctx = AttackContext.get()
 
@@ -381,8 +382,9 @@ results/
 
 **Attack Implementation**: Focus only on attack logic
 ```python
-def generate_attack(self, prompt: str, **kwargs) -> str:
-    # Only: transform prompt to bypass safety
+def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
+    # Only: transform prompt to bypass safety.
+    # Return either a string prompt or preformatted chat messages.
     return modified_prompt
 ```
 

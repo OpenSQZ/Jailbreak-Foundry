@@ -7,8 +7,8 @@ Paper: Boundary Point Jailbreaking (BPJ) (2602.15001v2)
 from typing import Dict, Any, Optional, List
 import random
 import string
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class BPJGen(ModernBaseAttack):

@@ -12,8 +12,8 @@ import random
 import logging
 from typing import Dict, Any, List, Optional, Tuple, Set
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -121,45 +121,24 @@ class CCBOSAttack(ModernBaseAttack):
     PARAMETERS = {
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for classical Chinese prompt generation",
             cli_arg="--attack_model",
         ),
-        "attack_provider": AttackParameter(
-            name="attack_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the attacker model",
-            cli_arg="--attack_provider",
-        ),
         "translation_model": AttackParameter(
             name="translation_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for translating classical Chinese responses to English",
             cli_arg="--translation_model",
         ),
-        "translation_provider": AttackParameter(
-            name="translation_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the translation model",
-            cli_arg="--translation_provider",
-        ),
         "judge_model": AttackParameter(
             name="judge_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for fitness evaluation (LLM judge)",
             cli_arg="--judge_model",
-        ),
-        "judge_provider": AttackParameter(
-            name="judge_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the judge model",
-            cli_arg="--judge_provider",
         ),
         "population_size": AttackParameter(
             name="population_size",
@@ -227,33 +206,38 @@ class CCBOSAttack(ModernBaseAttack):
         ]
 
         attack_model = self.get_parameter_value("attack_model")
-        attack_provider = self.get_parameter_value("attack_provider")
         translation_model = self.get_parameter_value("translation_model")
-        translation_provider = self.get_parameter_value("translation_provider")
         judge_model = self.get_parameter_value("judge_model")
-        judge_provider = self.get_parameter_value("judge_provider")
 
         self.attacker_llm = LLMLiteLLM.from_config(
-            provider=attack_provider,
-            model_name=attack_model,
+            provider=attack_model["provider"],
+            model_name=attack_model["model"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base"),
         )
         self.translation_llm = LLMLiteLLM.from_config(
-            provider=translation_provider,
-            model_name=translation_model,
+            provider=translation_model["provider"],
+            model_name=translation_model["model"],
+            api_key=translation_model.get("api_key"),
+            api_base=translation_model.get("api_base"),
         )
         self.judge_llm = LLMLiteLLM.from_config(
-            provider=judge_provider,
-            model_name=judge_model,
+            provider=judge_model["provider"],
+            model_name=judge_model["model"],
+            api_key=judge_model.get("api_key"),
+            api_base=judge_model.get("api_base"),
         )
 
         # Victim model is the target (victim-as-target pattern)
         target_model = args.model if args and hasattr(args, "model") else "gpt-4o-mini"
         target_provider = args.provider if args and hasattr(args, "provider") else "openai"
+        target_api_key = args.api_key if args and hasattr(args, "api_key") else None
         target_api_base = args.api_base if args and hasattr(args, "api_base") else None
 
         self.target_llm = LLMLiteLLM.from_config(
             provider=target_provider,
             model_name=target_model,
+            api_key=target_api_key,
             api_base=target_api_base,
         )
 

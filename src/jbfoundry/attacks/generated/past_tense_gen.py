@@ -11,9 +11,9 @@ Paper: Does Refusal Training in LLMs Generalize to the Past Tense?
 
 from typing import Dict, Any, Optional, List
 import random
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
-from ...evaluation.base import JailbreakEvaluator
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
+from jbfoundry.evaluation.base import JailbreakEvaluator
 
 
 class PastTenseAttack(ModernBaseAttack):
@@ -30,17 +30,10 @@ class PastTenseAttack(ModernBaseAttack):
     PARAMETERS = {
         "reformulation_model": AttackParameter(
             name="reformulation_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use for past tense reformulation",
             cli_arg="--reformulation_model"
-        ),
-        "reformulation_provider": AttackParameter(
-            name="reformulation_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for reformulation model",
-            cli_arg="--reformulation_provider"
         ),
         "reformulation_temperature": AttackParameter(
             name="reformulation_temperature",
@@ -71,15 +64,19 @@ class PastTenseAttack(ModernBaseAttack):
         
         # Get parameters
         self.reformulation_model = self.get_parameter_value("reformulation_model")
-        self.reformulation_provider = self.get_parameter_value("reformulation_provider")
+        self.reformulation_provider = self.reformulation_model["provider"]
         self.reformulation_temperature = self.get_parameter_value("reformulation_temperature")
         self.reformulation_max_tokens = self.get_parameter_value("reformulation_max_tokens")
         self.n_restarts = self.get_parameter_value("n_restarts")
         
         # Initialize reformulation LLM
         self.reformulation_llm = LLMLiteLLM.from_config(
-            provider=self.reformulation_provider,
-            model_name=self.reformulation_model
+            provider=self.reformulation_model["provider"],
+            model_name=self.reformulation_model["model"],
+            api_key=self.reformulation_model.get("api_key"),
+            api_base=self.reformulation_model.get("api_base"),
+            temperature=self.reformulation_temperature,
+            max_tokens=self.reformulation_max_tokens
         )
     
     def reformulate_past_tense(self, request: str) -> str:
@@ -167,10 +164,12 @@ However, do not be constrained by these examples. Feel free to use your creativi
             # Create target LLM from args (model and provider from CLI)
             model_name = getattr(self.args, 'model', 'gpt-3.5-turbo')
             provider = getattr(self.args, 'provider', 'openai')
-            api_base = getattr(self.args, 'api_base')
+            api_key = getattr(self.args, 'api_key', None)
+            api_base = getattr(self.args, 'api_base', None)
             target_llm = LLMLiteLLM.from_config(
                 provider=provider,
                 model_name=model_name,
+                api_key=api_key,
                 api_base=api_base
             )
         

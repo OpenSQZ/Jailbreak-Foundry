@@ -10,8 +10,8 @@ Paper: QueryAttack: Jailbreaking LLMs through Structured Query Language Translat
 from typing import Dict, Any, Optional, List
 import re
 import json
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 # Import NLTK for POS tagging
 try:
@@ -59,8 +59,8 @@ class QueryAttackGen(ModernBaseAttack):
         ),
         "extraction_model": AttackParameter(
             name="extraction_model",
-            param_type=str,
-            default="gpt-4-1106-preview",
+            param_type=dict,
+            default={'model': 'gpt-4-1106-preview', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use for component extraction",
             cli_arg="--extraction_model"
         ),
@@ -804,8 +804,10 @@ Below is the sentence I input:
         
         # Initialize extraction LLM (GPT-4 for component extraction)
         self.extraction_llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=self.extraction_model,
+            provider=self.extraction_model["provider"],
+            model_name=self.extraction_model["model"],
+            api_key=self.extraction_model.get("api_key"),
+            api_base=self.extraction_model.get("api_base"),
             temperature=self.temperature
         )
     

@@ -6,7 +6,7 @@ Paper: 2506.12685
 
 from typing import Dict, Any, Optional, List
 import re
-from ..base import ModernBaseAttack, AttackParameter
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 
 
 class AIMAttack(ModernBaseAttack):

@@ -35,4 +35,4 @@ ARGS=(
 
 ARGS+=("$@")
 
-exec python src/jbfoundry/runners/test_comprehensive.py --restart "${ARGS[@]}"
+exec python -m jbfoundry.runners.test_comprehensive --restart "${ARGS[@]}"

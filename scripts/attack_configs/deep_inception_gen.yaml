@@ -1,0 +1,25 @@
+attack_name: "deep_inception_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  scene_type: "science fiction"
+  character_number: 5
+  layer_number: 5

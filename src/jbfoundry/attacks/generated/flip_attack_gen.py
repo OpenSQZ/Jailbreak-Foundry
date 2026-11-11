@@ -9,7 +9,7 @@ LangGPT, few-shot demonstrations) to guide the LLM to decode and execute the hid
 
 import textwrap
 from typing import Dict, Any, Optional, List, Union
-from ..base import ModernBaseAttack, AttackParameter
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 
 
 class FlipAttackGen(ModernBaseAttack):

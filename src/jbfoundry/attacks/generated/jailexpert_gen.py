@@ -18,8 +18,8 @@ from dataclasses import dataclass
 import base64
 import codecs
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -502,15 +502,15 @@ class JailExpertAttack(ModernBaseAttack):
         ),
         "embedding_model": AttackParameter(
             name="embedding_model",
-            param_type=str,
-            default="text-embedding-3-small",
+            param_type=dict,
+            default={'model': 'text-embedding-3-small', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for semantic embeddings",
             cli_arg="--embedding_model"
         ),
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="LLM used for generative mutations",
             cli_arg="--attack_model"
         ),
@@ -558,12 +558,16 @@ class JailExpertAttack(ModernBaseAttack):
         
         # Initialize LLMs
         self.embedding_llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=self.embedding_model_name
+            provider=self.embedding_model_name["provider"],
+            model_name=self.embedding_model_name["model"],
+            api_key=self.embedding_model_name.get("api_key"),
+            api_base=self.embedding_model_name.get("api_base")
         )
         self.attack_llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=self.attack_model_name
+            provider=self.attack_model_name["provider"],
+            model_name=self.attack_model_name["model"],
+            api_key=self.attack_model_name.get("api_key"),
+            api_base=self.attack_model_name.get("api_base")
         )
         
         # Initialize components

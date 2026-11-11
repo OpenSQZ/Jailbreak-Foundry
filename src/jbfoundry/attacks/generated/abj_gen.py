@@ -25,8 +25,8 @@ from typing import Dict, Any, Optional
 import re
 import json
 import random
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class ABJAttack(ModernBaseAttack):
@@ -52,31 +52,17 @@ class ABJAttack(ModernBaseAttack):
         ),
         "assist_model": AttackParameter(
             name="assist_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model name for query transformation and toxicity adjustment (reference repo: glm4; using gpt-4o-mini as functionally equivalent alternative since glm-4-plus is not available)",
             cli_arg="--assist_model"
         ),
-        "assist_provider": AttackParameter(
-            name="assist_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for assist model",
-            cli_arg="--assist_provider"
-        ),
         "judge_model": AttackParameter(
             name="judge_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model name for refusal detection (reference repo: gpt4o)",
             cli_arg="--judge_model"
-        ),
-        "judge_provider": AttackParameter(
-            name="judge_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for judge model",
-            cli_arg="--judge_provider"
         ),
         "temperature": AttackParameter(
             name="temperature",
@@ -179,22 +165,24 @@ Job: identity thief
         self.max_attack_rounds = self.get_parameter_value("max_attack_rounds")
         self.max_adjustment_rounds = self.get_parameter_value("max_adjustment_rounds")
         assist_model = self.get_parameter_value("assist_model")
-        assist_provider = self.get_parameter_value("assist_provider")
         judge_model = self.get_parameter_value("judge_model")
-        judge_provider = self.get_parameter_value("judge_provider")
         temperature = self.get_parameter_value("temperature")
         
         # Initialize assist model for query transformation and toxicity adjustment
         self.assist_model = LLMLiteLLM.from_config(
-            provider=assist_provider,
-            model_name=assist_model,
+            provider=assist_model["provider"],
+            model_name=assist_model["model"],
+            api_key=assist_model.get("api_key"),
+            api_base=assist_model.get("api_base"),
             temperature=temperature
         )
         
         # Initialize judge model for refusal detection
         self.judge_model = LLMLiteLLM.from_config(
-            provider=judge_provider,
-            model_name=judge_model,
+            provider=judge_model["provider"],
+            model_name=judge_model["model"],
+            api_key=judge_model.get("api_key"),
+            api_base=judge_model.get("api_base"),
             temperature=0.0
         )
     
@@ -355,10 +343,12 @@ Job: identity thief
             # Reference repo default: deepseek_v3 (using deepseek-chat as closest available)
             model_name = getattr(self.args, 'model', 'deepseek-chat')
             provider = getattr(self.args, 'provider', 'openai')
-            api_base = getattr(self.args, 'api_base')
+            api_key = getattr(self.args, 'api_key', None)
+            api_base = getattr(self.args, 'api_base', None)
             target_llm = LLMLiteLLM.from_config(
                 provider=provider,
                 model_name=model_name,
+                api_key=api_key,
                 api_base=api_base
             )
         

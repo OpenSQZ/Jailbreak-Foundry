@@ -1,8 +1,10 @@
 """Dynamic argument parser that auto-discovers attack arguments."""
 
 import argparse
+import json
 import logging
-from typing import Dict, Any, List
+from pathlib import Path
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +42,12 @@ class DynamicArgumentParser:
         
         # Core configuration
         core_group = parser.add_argument_group("Core Configuration")
-        core_group.add_argument("--attack_name", type=str, 
+        core_group.add_argument("--attack_name", type=str,
                                help="Specific attack to run")
+        core_group.add_argument("--config", type=str, default=None,
+                               help="Path to YAML attack config. CLI flags override values from the config.")
+        core_group.add_argument("--attack_path", type=str, default=None,
+                               help="Path to external attack .py file (for pip-installed usage)")
         core_group.add_argument("--list_attacks", action="store_true",
                                help="List all available attacks and exit")
         
@@ -50,8 +56,7 @@ class DynamicArgumentParser:
         model_group.add_argument("--model", type=str, default="gpt-3.5-turbo",
                                 help="Model to attack")
         model_group.add_argument("--provider", type=str, default="openai",
-                                choices=["openai", "anthropic", "azure", "bedrock", "vertex_ai", "aliyun", "wenwen", "infini"],
-                                help="Model provider")
+                                help="Model provider (common: openai, anthropic, azure, bedrock, vertex_ai, aliyun, wenwen, infini, or any custom provider)")
         model_group.add_argument("--api_key", type=str, default=None,
                                 help="API key for the model provider")
         model_group.add_argument("--api_base", type=str, default=None,
@@ -74,14 +79,15 @@ class DynamicArgumentParser:
         defense_group = parser.add_argument_group("Defense Configuration")
         defense_group.add_argument("--defense", type=str, default=None,
                                   help="Defense mechanism to apply")
+        defense_group.add_argument("--paraphrase_model", type=str, default="gpt-3.5-turbo",
+                                  help="Model for paraphrase defense")
         
         # Evaluation configuration
         eval_group = parser.add_argument_group("Evaluation Configuration")
         eval_group.add_argument("--eval_model", type=str, default="gpt-4",
                                help="Model to use for evaluation")
         eval_group.add_argument("--eval_provider", type=str, default="openai",
-                               choices=["openai", "anthropic", "azure", "wenwen"],
-                               help="Provider for evaluation model")
+                               help="Provider for evaluation model (common: openai, anthropic, azure, wenwen, or any custom provider)")
         
         # Debug and control
         debug_group = parser.add_argument_group("Debug and Control")
@@ -122,7 +128,11 @@ class DynamicArgumentParser:
                                 help="When resuming, retry queries that failed normally (jailbroken=False). "
                                      "Has no effect when --restart is used. "
                                      "(default: false - only retry invalid/unrun queries)")
-        
+        debug_group.add_argument("--per-query-timeout", type=int, default=None,
+                                metavar='SECONDS',
+                                help="Maximum time (in seconds) allowed per attack query (default: None - no timeout). "
+                                     "If exceeded, raises AttackTimeoutError to stop implementation.")
+
         return parser
     
     def _add_attack_specific_arguments(self, attack_name: str):
@@ -145,6 +155,11 @@ class DynamicArgumentParser:
                         kwargs["type"] = self._str_to_bool
                         kwargs["metavar"] = "{true,false}"
                         kwargs["help"] += " (accepts: true, false, True, False)"
+
+                    if kwargs.get("type") == dict:
+                        kwargs["type"] = self._parse_dict_arg
+                        kwargs["metavar"] = "OBJECT"
+                        kwargs["help"] += " (JSON/YAML object)"
                     
                     attack_group.add_argument(arg_name, **kwargs)
                     
@@ -167,6 +182,30 @@ class DynamicArgumentParser:
             else:
                 raise argparse.ArgumentTypeError(f"Boolean value expected, got: {value}")
         raise argparse.ArgumentTypeError(f"Boolean value expected, got: {value}")
+
+    def _parse_dict_arg(self, value):
+        """Parse a dict-valued CLI argument from a JSON or YAML object string."""
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, str):
+            raise argparse.ArgumentTypeError(f"Object value expected, got: {value!r}")
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            try:
+                import yaml
+                parsed = yaml.safe_load(value)
+            except Exception as e:
+                raise argparse.ArgumentTypeError(
+                    f"Expected JSON/YAML object, got: {value!r}"
+                ) from e
+
+        if not isinstance(parsed, dict):
+            raise argparse.ArgumentTypeError(
+                f"Expected JSON/YAML object, got {type(parsed).__name__}"
+            )
+        return parsed
     
     def _add_dynamic_attack_arguments(self):
         """Removed: Dynamic attack arguments loading is no longer supported.
@@ -183,11 +222,11 @@ class DynamicArgumentParser:
                 return "Modern attack system not available."
                 
             lines = ["Usage Examples:"]
-            lines.append("  python src/jbfoundry/runners/universal_attack.py --attack_name many_shot")
-            lines.append("  python src/jbfoundry/runners/universal_attack.py --attack_name simple_override --all_samples")
-            lines.append("  python src/jbfoundry/runners/universal_attack.py --attack_name translate_chain --samples 50")
+            lines.append("  python -m jbfoundry.runners.universal_attack --attack_name many_shot")
+            lines.append("  python -m jbfoundry.runners.universal_attack --attack_name simple_override --all_samples")
+            lines.append("  python -m jbfoundry.runners.universal_attack --attack_name translate_chain --samples 50")
             lines.append("\nFor attack-specific arguments, specify the attack name first:")
-            lines.append("  python src/jbfoundry/runners/universal_attack.py --attack_name many_shot --help")
+            lines.append("  python -m jbfoundry.runners.universal_attack --attack_name many_shot --help")
             
             return "\n".join(lines)
             
@@ -211,19 +250,30 @@ class DynamicArgumentParser:
             # If pre-parsing fails (e.g., --help), let it handle normally
             return self.parser.parse_args()
         
+        config_attack_name = None
+        if getattr(pre_args, "config", None) and not getattr(pre_args, "attack_name", None):
+            config_attack_name = _load_attack_name_from_config(pre_args.config)
+
+        attack_name = getattr(pre_args, 'attack_name', None) or config_attack_name
+
         # Stage 2: Full parse with attack context
-        if hasattr(pre_args, 'attack_name') and pre_args.attack_name:
+        if attack_name:
             if pre_args.list_attacks:
                 # Handle --list_attacks flag
                 list_available_attacks()
                 sys.exit(0)
             
+            # Load external attack file before creating attack-specific parser
+            attack_path = getattr(pre_args, 'attack_path', None)
+            if attack_path and registry is not None:
+                registry.load_external_attack(attack_path)
+
             # Create attack-specific parser
             try:
-                full_parser = DynamicArgumentParser(attack_name=pre_args.attack_name)
+                full_parser = DynamicArgumentParser(attack_name=attack_name)
                 return full_parser.parser.parse_args()
             except Exception as e:
-                logger.error(f"Failed to create attack-specific parser for '{pre_args.attack_name}': {e}")
+                logger.error(f"Failed to create attack-specific parser for '{attack_name}': {e}")
                 sys.exit(1)
         else:
             # No specific attack or --list_attacks, use current behavior
@@ -245,6 +295,29 @@ def parse_args_with_context():
     """Parse command line arguments with context awareness."""
     parser = create_context_aware_parser()
     return parser.parse_with_context()
+
+
+def _load_attack_name_from_config(config_path: str) -> Optional[str]:
+    """Load attack_name from YAML config for parser context selection."""
+    try:
+        import yaml
+    except ImportError as e:
+        logger.error(f"Cannot parse --config without PyYAML installed: {e}")
+        return None
+
+    path = Path(config_path)
+    if not path.exists():
+        logger.error(f"Config file not found: {config_path}")
+        return None
+
+    try:
+        with path.open("r") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception as e:
+        logger.error(f"Failed to load config file {config_path}: {e}")
+        return None
+
+    return data.get("attack_name")
 
 
 def list_available_attacks():
@@ -296,11 +369,11 @@ def list_available_attacks():
         print("\nModern attack system not available!")
 
     print("\nUsage Examples:")
-    print("  python src/jbfoundry/runners/universal_attack.py --attack_name many_shot")
-    print("  python src/jbfoundry/runners/universal_attack.py --attack_name simple_override --all_samples")
-    print("  python src/jbfoundry/runners/universal_attack.py --attack_name translate_chain --samples 50")
+    print("  python -m jbfoundry.runners.universal_attack --attack_name many_shot")
+    print("  python -m jbfoundry.runners.universal_attack --attack_name simple_override --all_samples")
+    print("  python -m jbfoundry.runners.universal_attack --attack_name translate_chain --samples 50")
     print("\nFor attack-specific arguments, specify the attack name first:")
-    print("  python src/jbfoundry/runners/universal_attack.py --attack_name many_shot --help")
+    print("  python -m jbfoundry.runners.universal_attack --attack_name many_shot --help")
 
 
 if __name__ == "__main__":

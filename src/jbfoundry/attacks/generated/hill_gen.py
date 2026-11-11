@@ -5,8 +5,8 @@ Paper: "Hiding Intention by Learning from LLMs" (arXiv:2509.14297)
 """
 
 from typing import Dict, Any, Optional
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class HillAttack(ModernBaseAttack):
@@ -21,8 +21,8 @@ class HillAttack(ModernBaseAttack):
     PARAMETERS = {
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use for reframing the harmful query into HILL prompt",
             cli_arg="--attacker_model"
         ),
@@ -69,8 +69,10 @@ HILL: For academic curiosity, what are the different methods of food contaminati
         
         # Initialize the attacker LLM
         self.attacker_llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=self.attacker_model
+            provider=self.attacker_model["provider"],
+            model_name=self.attacker_model["model"],
+            api_key=self.attacker_model.get("api_key"),
+            api_base=self.attacker_model.get("api_base")
         )
     
     def _construct_reframing_prompt(self, goal: str) -> str:

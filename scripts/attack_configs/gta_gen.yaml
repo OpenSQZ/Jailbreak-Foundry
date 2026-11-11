@@ -1,0 +1,36 @@
+attack_name: "gta_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  rounds: 5
+  attack_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  judge_model:
+    model: "gpt-4o"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  temperature: 0.3
+  scenario: "pd"
+  obfuscate: false

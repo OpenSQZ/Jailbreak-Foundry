@@ -52,8 +52,8 @@ implemented correctly and matches the paper exactly.
 """
 
 from typing import Dict, Any, Optional
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class PastTenseGen(ModernBaseAttack):

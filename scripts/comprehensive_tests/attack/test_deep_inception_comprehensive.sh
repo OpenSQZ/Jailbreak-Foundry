@@ -37,4 +37,4 @@ ARGS=(
 
 ARGS+=("$@")
 
-exec python src/jbfoundry/runners/test_comprehensive.py "${ARGS[@]}"
+exec python -m jbfoundry.runners.test_comprehensive "${ARGS[@]}"

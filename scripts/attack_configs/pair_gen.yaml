@@ -1,0 +1,45 @@
+attack_name: "pair_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  n_streams: 10
+  n_iterations: 3
+  keep_last_n: 4
+  attack_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  attack_temperature: 1.0
+  attack_top_p: 0.9
+  attack_max_tokens: 500
+  target_temperature: 0.0
+  target_max_tokens: 150
+  judge_model:
+    model: "gpt-4o-mini"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  judge_temperature: 0.0
+  judge_max_tokens: 10
+  max_attack_attempts: 5
+  pair_seed: 0
+  success_threshold: 10

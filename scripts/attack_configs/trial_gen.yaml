@@ -1,0 +1,40 @@
+attack_name: "trial_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  attack_model:
+    model: "gpt-4o"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  judge_model:
+    model: "gpt-4o"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  n_iterations: 5
+  attack_temperature: 1.0
+  judge_temperature: 0.0
+  helper_model:
+    model: "gpt-4o"
+    provider: "openai"
+    api_key: null
+    api_base: null

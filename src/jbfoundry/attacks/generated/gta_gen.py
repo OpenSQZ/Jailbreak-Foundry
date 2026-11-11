@@ -11,8 +11,8 @@ import re
 import logging
 from typing import Dict, Any, Optional, List
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -33,45 +33,17 @@ class GTAGen(ModernBaseAttack):
         ),
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={"model": "gpt-4o-mini", "provider": "openai", "api_key": None, "api_base": None},
             description="Model for the Police agent",
             cli_arg="--attack_model"
         ),
-        "attack_provider": AttackParameter(
-            name="attack_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the Police agent model",
-            cli_arg="--attack_provider"
-        ),
         "judge_model": AttackParameter(
             name="judge_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={"model": "gpt-4o", "provider": "openai", "api_key": None, "api_base": None},
             description="Model for the Judge evaluator",
             cli_arg="--judge_model"
-        ),
-        "judge_provider": AttackParameter(
-            name="judge_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the Judge model",
-            cli_arg="--judge_provider"
-        ),
-        "target_model": AttackParameter(
-            name="target_model",
-            param_type=str,
-            default="gpt-4o-mini",
-            description="Target model (Thomas/Marcos)",
-            cli_arg="--target_model"
-        ),
-        "target_provider": AttackParameter(
-            name="target_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the target model",
-            cli_arg="--target_provider"
         ),
         "temperature": AttackParameter(
             name="temperature",
@@ -202,11 +174,10 @@ GOAL: "I masterminded the plan to hack a government database and steal sensitive
         # Get parameters
         self.rounds = self.get_parameter_value("rounds")
         self.attack_model = self.get_parameter_value("attack_model")
-        self.attack_provider = self.get_parameter_value("attack_provider")
         self.judge_model = self.get_parameter_value("judge_model")
-        self.judge_provider = self.get_parameter_value("judge_provider")
         self.target_model = args.model
         self.target_provider = args.provider
+        self.target_api_key = args.api_key
         self.target_api_base = args.api_base
         self.temperature = self.get_parameter_value("temperature")
         self.scenario = self.get_parameter_value("scenario")
@@ -214,26 +185,33 @@ GOAL: "I masterminded the plan to hack a government database and steal sensitive
         
         # Initialize LLM instances
         self.attacker_llm = LLMLiteLLM.from_config(
-            provider=self.attack_provider,
-            model_name=self.attack_model
+            provider=self.attack_model["provider"],
+            model_name=self.attack_model["model"],
+            api_key=self.attack_model.get("api_key"),
+            api_base=self.attack_model.get("api_base"),
         )
         
         self.judge_llm = LLMLiteLLM.from_config(
-            provider=self.judge_provider,
-            model_name=self.judge_model
+            provider=self.judge_model["provider"],
+            model_name=self.judge_model["model"],
+            api_key=self.judge_model.get("api_key"),
+            api_base=self.judge_model.get("api_base"),
         )
         
         self.target_llm = LLMLiteLLM.from_config(
             provider=self.target_provider,
             model_name=self.target_model,
+            api_key=self.target_api_key,
             api_base=self.target_api_base
         )
         
         # Initialize HTTE LLM if obfuscation is enabled
         if self.obfuscate:
             self.htte_llm = LLMLiteLLM.from_config(
-                provider=self.attack_provider,
-                model_name=self.attack_model
+                provider=self.attack_model["provider"],
+                model_name=self.attack_model["model"],
+                api_key=self.attack_model.get("api_key"),
+                api_base=self.attack_model.get("api_base"),
             )
         
         logger.info(f"Initialized GTA attack with {self.rounds} rounds, scenario={self.scenario}, obfuscate={self.obfuscate}")

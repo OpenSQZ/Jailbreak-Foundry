@@ -27,8 +27,8 @@ Gaps that cannot be fully addressed within this file:
 
 from typing import Dict, Any, Optional, List
 import random
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 # Benign token pool from the paper (Table 10)
 BENIGN_TOKEN_POOL = ["protect", "secure", "preserve", "avoid", "conserve", "eliminate", "remove"]

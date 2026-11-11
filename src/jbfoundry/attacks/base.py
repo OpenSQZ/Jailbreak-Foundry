@@ -10,6 +10,8 @@ from .context import AttackContext, _attack_context
 
 logger = logging.getLogger(__name__)
 
+AttackPrompt = Union[str, List[Dict[str, str]]]
+
 
 class AttackMetaclass(ABCMeta):
     """
@@ -29,7 +31,7 @@ class AttackMetaclass(ABCMeta):
             original_generate_attack = class_dict['generate_attack']
 
             # Create a context-wrapped version
-            def wrapped_generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> str:
+            def wrapped_generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
                 """Context-wrapped generate_attack method."""
                 # Create isolated context for this attack run
                 context = AttackContext(**kwargs)
@@ -118,9 +120,9 @@ class ModernBaseAttack(ABC, metaclass=AttackMetaclass):
                 raise ValueError(f"Attack {self.__class__.__name__} missing required field: {field}")
     
     @abstractmethod
-    def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> str:
+    def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
         """
-        Generate an attack string.
+        Generate an attack payload.
 
         Subclasses implement this method normally. The metaclass automatically
         wraps it with thread-safe context management for cost tracking.
@@ -132,7 +134,10 @@ class ModernBaseAttack(ABC, metaclass=AttackMetaclass):
             **kwargs: Additional parameters
 
         Returns:
-            The generated attack string
+            Either a plain prompt string or a preformatted chat message list.
+            Return a message list when the source attack relies on system roles
+            or multi-turn chat state; the runner passes either form directly to
+            ``LLMLiteLLM.query``.
         """
         pass
     

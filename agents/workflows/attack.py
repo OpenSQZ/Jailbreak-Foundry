@@ -6,13 +6,15 @@ This module handles all flow control logic, determining when to run which agent
 and passing structured results between agents.
 """
 
+import json
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from agents.utils.agent_utils import AgentResult, CursorAgentRunner, validate_environment
+from agents.utils.agent_utils import AgentResult, create_agent_runner, find_in_json, validate_environment
 from agents.utils.checkpoint import CheckpointManager
 
 
@@ -22,17 +24,14 @@ class AttackWorkflowConfig:
     arxiv_id: str
     repo_root: Path
     max_loops: int = 10
-    cursor_agent_bin: str = "cursor-agent"
-    cursor_agent_flags: list = None
-    attack_model: str = "sonnet-4.5"
-    planner_model: str = "gemini-3-pro"
-    audit_model: str = "gpt-5.1"
-    use_proxychains: bool = True
-    agent_variant: str = "default"  # "default" or "no_code"
-
-    def __post_init__(self):
-        if self.cursor_agent_flags is None:
-            self.cursor_agent_flags = []
+    planner_agent: str = "codex"
+    attack_agent: str = "codex"
+    audit_agent: str = "codex"
+    attack_model: str = "gpt-5.5"
+    planner_model: str = "gpt-5.5"
+    audit_model: str = "gpt-5.5"
+    paper_source: str = "pdf"  # "pdf" skips OCR; "ocr" creates/uses paper markdown
+    per_query_timeout: int = 0  # Maximum time (seconds) per attack query (0 = no timeout)
 
 
 def _compute_resume_state(
@@ -67,36 +66,28 @@ class PaperToAttackWorkflow:
         Args:
             config: Workflow configuration
         """
+        if config.paper_source not in {"pdf", "ocr"}:
+            raise ValueError("paper_source must be 'pdf' or 'ocr'")
+
         self.config = config
         self.repo_root = config.repo_root
 
-        # Setup paths - use subdirectory based on agent variant
-        if config.agent_variant == "no_code":
-            self.paper_dir = self.repo_root / "attacks_paper_info" / "no_code" / self.config.arxiv_id
-        else:
-            self.paper_dir = self.repo_root / "attacks_paper_info" / self.config.arxiv_id
+        self.paper_dir = self.repo_root / "attacks_paper_info" / self.config.arxiv_id
+
+        # Common paths for all variants
         self.paper_pdf_file = self.paper_dir / f"{self.config.arxiv_id}.pdf"
         self.paper_md_file = self.paper_dir / f"{self.config.arxiv_id}.md"
         self.impl_plan_md_file = self.paper_dir / f"{self.config.arxiv_id}_implementation_plan.md"
+        self.experiment_setup_file = self.paper_dir / "experiment_setup.yaml"
         self.current_source_md_file = self.paper_md_file
         self._update_current_source_path()
 
-        # Set agent playbooks based on variant
         playbook_dir = self.repo_root / "agents/playbooks/attack"
-        if config.agent_variant == "no_code":
-            self.planner_playbook = playbook_dir / "attack_planner_no_code.md"
-            self.attack_playbook = playbook_dir / "attack_implementation_no_code.md"
-            self.audit_playbook = playbook_dir / "attack_auditor_no_code.md"
-        else:
-            self.planner_playbook = playbook_dir / "attack_planner.md"
-            self.attack_playbook = playbook_dir / "attack_implementation.md"
-            self.audit_playbook = playbook_dir / "attack_auditor.md"
+        self.planner_playbook = playbook_dir / "attack_planner.md"
+        self.attack_playbook = playbook_dir / "attack_implementation.md"
+        self.audit_playbook = playbook_dir / "attack_auditor.md"
 
-        # Setup log directory - include variant in path
-        if config.agent_variant == "no_code":
-            self.log_dir = self.repo_root / "logs/attack_auditor" / "no_code" / config.arxiv_id
-        else:
-            self.log_dir = self.repo_root / "logs/attack_auditor" / config.arxiv_id
+        self.log_dir = self.repo_root / ".agent_runs" / "attack" / config.arxiv_id
 
         # Create log directory
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -104,18 +95,21 @@ class PaperToAttackWorkflow:
         # Initialize checkpoint manager
         self.checkpoint = CheckpointManager(self.log_dir)
 
-        # Initialize agent runner
-        self.agent_runner = CursorAgentRunner(
-            cursor_agent_bin=config.cursor_agent_bin,
-            cursor_agent_flags=config.cursor_agent_flags,
-            repo_root=self.repo_root
-        )
+        # Initialize agent runners
+        self.planner_runner = create_agent_runner(config.planner_agent, self.repo_root)
+        self.attack_runner = create_agent_runner(config.attack_agent, self.repo_root)
+        self.audit_runner = create_agent_runner(config.audit_agent, self.repo_root)
 
         # Validate environment
-        validate_environment(
-            config.cursor_agent_bin,
-            [self.planner_playbook, self.attack_playbook, self.audit_playbook]
-        )
+        seen_bins = set()
+        for runner in [self.planner_runner, self.attack_runner, self.audit_runner]:
+            if runner.bin_path not in seen_bins:
+                validate_environment(runner.bin_path, [])
+                seen_bins.add(runner.bin_path)
+        for playbook in [self.planner_playbook, self.attack_playbook, self.audit_playbook]:
+            if not playbook.exists():
+                print(f"❌ Missing required file: {playbook}", file=sys.stderr)
+                sys.exit(1)
 
     def _update_current_source_path(self) -> None:
         """Update pointer to current source document (paper or implementation plan)."""
@@ -135,11 +129,10 @@ class PaperToAttackWorkflow:
         """
         Ensure the paper assets exist, reprocessing if needed.
 
-        This checks for paper assets in the appropriate directory based on agent_variant:
-        - default: attacks_paper_info/{arxiv_id}/
-        - no_code: attacks_paper_info/no_code/{arxiv_id}/
+        This checks for paper assets in attacks_paper_info/{arxiv_id}/.
 
-        If requirements are missing, runs paper_preprocessor.py to download and convert.
+        If requirements are missing, runs paper_preprocessor.py to download
+        the PDF and optionally create OCR markdown.
 
         Raises:
             SystemExit: If preprocessing fails
@@ -149,31 +142,30 @@ class PaperToAttackWorkflow:
         impl_plan_exists = self.impl_plan_md_file.exists()
 
         if impl_plan_exists:
-            print("✅ Implementation plan already exists; skipping paper markdown requirement")
+            print("✅ Implementation plan already exists; skipping paper source requirement")
             print(f"   Plan: {self.impl_plan_md_file}")
             self._update_current_source_path()
             return
 
-        if pdf_exists and md_exists:
+        requires_ocr = self.config.paper_source == "ocr"
+
+        if pdf_exists and (md_exists or not requires_ocr):
             print(f"✅ Paper assets already processed")
             print(f"   PDF: {self.paper_pdf_file}")
-            print(f"   paper markdown: {self.paper_md_file}")
+            if md_exists:
+                print(f"   paper markdown: {self.paper_md_file}")
             self._update_current_source_path()
             return
 
         print(f"📥 Paper assets missing, running preprocessor...")
 
-        # Run paper preprocessor with appropriate output root based on variant
         cmd = [
             "python",
             "agents/utils/paper_preprocessor.py",
-            "--arxiv-id", self.config.arxiv_id,
-            "--service-account", "vertex_credentials.json"
+            "--arxiv-id", self.config.arxiv_id
         ]
-
-        # Add output-root parameter for no_code variant
-        if self.config.agent_variant == "no_code":
-            cmd.extend(["--output-root", "attacks_paper_info/no_code"])
+        if not requires_ocr:
+            cmd.append("--skip-ocr")
 
         print(f"🔧 Running: {' '.join(cmd)}")
 
@@ -185,13 +177,15 @@ class PaperToAttackWorkflow:
         )
 
         if result.returncode != 0:
+            if result.returncode == 4:
+                print(f"⚠️  Paper rejected by eligibility triage (not a CPU-runnable black-box text-only jailbreak)")
+                sys.exit(4)
             print(f"❌ Paper preprocessing failed!")
             sys.exit(1)
 
-        # Verify files were created
         pdf_exists = self.paper_pdf_file.exists()
         md_exists = self.paper_md_file.exists()
-        if not pdf_exists or not md_exists:
+        if not pdf_exists or (requires_ocr and not md_exists):
             print(f"❌ Preprocessing completed but files not found:")
             print(f"   PDF exists: {pdf_exists}")
             print(f"   MD exists:  {md_exists}")
@@ -199,8 +193,64 @@ class PaperToAttackWorkflow:
 
         print(f"✅ Paper processed successfully")
         print(f"   PDF: {self.paper_pdf_file}")
-        print(f"   MD:  {self.paper_md_file}")
+        if md_exists:
+            print(f"   MD:  {self.paper_md_file}")
         self._update_current_source_path()
+
+    def extract_experiment_setup(self) -> None:
+        """
+        Extract experiment setup (datasets, models, judge) from paper PDF.
+
+        Runs agents/utils/experiment_setup_extractor.py to analyze the paper
+        and extract evaluation configuration used in the original paper.
+
+        This is a one-time step that creates experiment_setup.yaml if it doesn't exist.
+
+        Raises:
+            SystemExit: If extraction fails
+        """
+        if self.experiment_setup_file.exists():
+            print(f"✅ Experiment setup already extracted")
+            print(f"   File: {self.experiment_setup_file}")
+            return
+
+        print(f"📊 Experiment setup not found, running extractor...")
+
+        # Check if PDF exists
+        if not self.paper_pdf_file.exists():
+            print(f"❌ Paper PDF not found: {self.paper_pdf_file}")
+            print(f"   Run check_and_process_paper() first")
+            sys.exit(1)
+
+        # Run experiment setup extractor
+        cmd = [
+            "python",
+            "agents/utils/experiment_setup_extractor.py",
+            "--arxiv-id", self.config.arxiv_id,
+            "--pdf-path", str(self.paper_pdf_file),
+            "--output", str(self.experiment_setup_file)
+        ]
+
+        print(f"🔧 Running: {' '.join(cmd)}")
+
+        result = subprocess.run(
+            cmd,
+            cwd=self.repo_root,
+            capture_output=False,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"❌ Experiment setup extraction failed!")
+            sys.exit(1)
+
+        # Verify file was created
+        if not self.experiment_setup_file.exists():
+            print(f"❌ Extraction completed but file not found: {self.experiment_setup_file}")
+            sys.exit(1)
+
+        print(f"✅ Experiment setup extracted successfully")
+        print(f"   File: {self.experiment_setup_file}")
 
     def check_audit_verdict_exists(self) -> Optional[str]:
         """
@@ -262,6 +312,19 @@ class PaperToAttackWorkflow:
         }
 
         # Build extra instructions
+        timeout_instruction = ""
+        if self.config.per_query_timeout > 0:
+            timeout_instruction = f"""
+
+TIMEOUT CONSTRAINTS (LEGACY - should not be used during implementation):
+- When running attack configs, add --per-query-timeout {self.config.per_query_timeout}
+- If you encounter "ATTACK TIMEOUT ERROR" or "timeout exceeded":
+  * DO NOT try to fix or optimize the code
+  * This is a FATAL error indicating the algorithm is too slow
+  * Immediately report failure with status: "failure" and error details
+  * Do not continue attempting to fix the implementation
+"""
+
         extra_instructions = f"""
 At the end of your implementation, output a JSON result block:
 
@@ -270,16 +333,24 @@ At the end of your implementation, output a JSON result block:
   "status": "success",
   "result": {{
     "attack_name": "the_attack_name_gen",
-    "implementation_file": "src/jbfoundry/attacks/generated/attack_name.py",
-    "test_script": "scripts/comprehensive_tests/attack/test_attack_name_comprehensive.sh",
+    "implementation_file": "src/jbfoundry/attacks/generated/attack_name_gen.py",
+    "attack_config": "scripts/attack_configs/attack_name_gen.yaml",
     "completed": true
   }}
 }}
 ```
+
+If the implementation fails (including timeout errors), report:
+```json
+{{
+  "status": "failure",
+  "error": "description of the error"
+}}
+```{timeout_instruction}
 """
 
         # Build prompt
-        prompt = self.agent_runner.build_prompt(
+        prompt = self.attack_runner.build_prompt(
             f"attack-implementation-iter-{iteration}",
             playbook_content,
             context,
@@ -288,11 +359,10 @@ At the end of your implementation, output a JSON result block:
 
         # Run agent
         log_file = self.log_dir / f"attack-pass-{iteration}.txt"
-        result = self.agent_runner.run(
+        result = self.attack_runner.run(
             prompt,
             model=self.config.attack_model,
             log_file=log_file,
-            use_proxychains=self.config.use_proxychains
         )
 
         return result
@@ -311,11 +381,9 @@ At the end of your implementation, output a JSON result block:
         print(f"🧭 IMPLEMENTATION PLANNING PASS (Iteration {iteration})")
         print(f"{'='*60}")
 
-        # Always use latest blueprint path
-        self._update_current_source_path()
-
-        if not self.paper_md_file.exists():
-            raise FileNotFoundError(f"Paper markdown missing: {self.paper_md_file}")
+        paper_md = self.paper_md_file if self.paper_md_file.exists() else None
+        if not self.paper_pdf_file.exists():
+            raise FileNotFoundError(f"Paper PDF missing: {self.paper_pdf_file}")
 
         # Load playbook
         with open(self.planner_playbook, 'r') as f:
@@ -324,7 +392,9 @@ At the end of your implementation, output a JSON result block:
         context = {
             "arxiv_id": self.config.arxiv_id,
             "iteration": iteration,
-            "paper_markdown": self._relative_to_repo(self.current_source_md_file),
+            "paper_markdown": self._relative_to_repo(paper_md) if paper_md else "",
+            "paper_pdf": self._relative_to_repo(self.paper_pdf_file),
+            "paper_source": self._relative_to_repo(paper_md) if paper_md else self._relative_to_repo(self.paper_pdf_file),
             "implementation_plan_output": self._relative_to_repo(self.impl_plan_md_file),
             "paper_assets_dir": self._relative_to_repo(self.paper_dir)
         }
@@ -343,7 +413,7 @@ At the end of your planning, output a JSON result block:
 ```
 """
 
-        prompt = self.agent_runner.build_prompt(
+        prompt = self.planner_runner.build_prompt(
             f"attack-planning-iter-{iteration}",
             playbook_content,
             context,
@@ -351,21 +421,11 @@ At the end of your planning, output a JSON result block:
         )
 
         log_file = self.log_dir / f"planner-pass-{iteration}.txt"
-        result = self.agent_runner.run(
+        result = self.planner_runner.run(
             prompt,
             model=self.config.planner_model,
             log_file=log_file,
-            use_proxychains=self.config.use_proxychains
         )
-
-        if result.success:
-            try:
-                self.paper_md_file.unlink()
-                print(f"🗑️  Removed paper markdown after planning: {self.paper_md_file}")
-            except FileNotFoundError:
-                pass
-            except OSError as exc:
-                print(f"⚠️  Failed to remove paper markdown {self.paper_md_file}: {exc}")
 
         return result
 
@@ -382,11 +442,11 @@ At the end of your planning, output a JSON result block:
         if not result.metadata.get("result_data"):
             raise ValueError("Planner agent did not return structured JSON result. Check logs.")
 
-        result_data = result.metadata["result_data"].get("result", {}) or {}
-        plan_path = result_data.get("implementation_plan_file")
+        raw = result.metadata["result_data"]
+        plan_path = find_in_json(raw, "implementation_plan_file")
 
         if not plan_path:
-            raise ValueError(f"JSON result missing 'implementation_plan_file' field. \n{result.metadata['result_data']}")
+            raise ValueError(f"JSON result missing 'implementation_plan_file' field. \n{raw}")
 
         print(f"✅ Implementation plan path from JSON: {plan_path}")
         return plan_path
@@ -443,7 +503,7 @@ At the end of your audit, output a JSON result block:
 """
 
         # Build prompt
-        prompt = self.agent_runner.build_prompt(
+        prompt = self.audit_runner.build_prompt(
             f"audit-iter-{iteration}",
             playbook_content,
             context,
@@ -452,11 +512,10 @@ At the end of your audit, output a JSON result block:
 
         # Run agent
         log_file = self.log_dir / f"auditor-pass-{iteration}.txt"
-        result = self.agent_runner.run(
+        result = self.audit_runner.run(
             prompt,
             model=self.config.audit_model,
             log_file=log_file,
-            use_proxychains=self.config.use_proxychains
         )
 
         return result
@@ -478,11 +537,11 @@ At the end of your audit, output a JSON result block:
         if not result.metadata.get("result_data"):
             raise ValueError("Audit agent did not return structured JSON result. Check logs.")
 
-        result_data = result.metadata["result_data"].get("result", {}) or {}
-        coverage = result_data.get("coverage_percentage")
+        raw = result.metadata["result_data"]
+        coverage = find_in_json(raw, "coverage_percentage")
 
         if coverage is None:
-            raise ValueError(f"JSON result missing 'coverage_percentage' field. \n{result.metadata['result_data']}")
+            raise ValueError(f"JSON result missing 'coverage_percentage' field. \n{raw}")
 
         print(f"📊 Coverage from JSON: {coverage}%")
         return int(coverage)
@@ -504,14 +563,52 @@ At the end of your audit, output a JSON result block:
         if not result.metadata.get("result_data"):
             raise ValueError("Agent did not return structured JSON result. Check logs.")
 
-        result_data = result.metadata["result_data"].get("result", {}) or {}
-        attack_name = result_data.get("attack_name")
+        raw = result.metadata["result_data"]
+        attack_name = find_in_json(raw, "attack_name")
 
         if not attack_name:
-            raise ValueError(f"JSON result missing 'attack_name' field. \n{result.metadata['result_data']}")
+            raise ValueError(f"JSON result missing 'attack_name' field. \n{raw}")
 
         print(f"✅ Attack name from JSON: {attack_name}")
         return attack_name
+
+    def write_metadata_file(self, attack_name: str, iteration: int, result: AgentResult) -> None:
+        """
+        Write stable metadata file with attack information.
+
+        This creates a JSON file that can be reliably read by backend without parsing agent output.
+
+        Args:
+            attack_name: Name of the generated attack
+            iteration: Current iteration number
+            result: AgentResult containing structured data
+
+        The metadata file is saved at attacks_paper_info/{arxiv_id}/metadata.json.
+        """
+        raw = result.metadata.get("result_data", {})
+
+        # Build paths
+        implementation_file = find_in_json(raw, "implementation_file") or f"src/jbfoundry/attacks/generated/{attack_name}.py"
+        attack_config = find_in_json(raw, "attack_config") or f"scripts/attack_configs/{attack_name}.yaml"
+        metadata = {
+            "attack_name": attack_name,
+            "arxiv_id": self.config.arxiv_id,
+            "implementation_file": implementation_file,
+            "attack_config": attack_config,
+            "iteration": iteration,
+            "generated_at": datetime.now().isoformat(),
+            "repo_root": str(self.repo_root),
+            "paper_dir": str(self.paper_dir)
+        }
+
+        metadata_file = self.paper_dir / "metadata.json"
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        print(f"✅ Metadata file written: {metadata_file}")
+        print(f"   Attack name: {attack_name}")
+        print(f"   Implementation: {implementation_file}")
+        print(f"   Attack config: {attack_config}")
 
     def run(self) -> None:
         """Execute the main workflow loop."""
@@ -525,6 +622,11 @@ At the end of your audit, output a JSON result block:
         print("📄 Step 0: Checking paper processing status...")
         self.check_and_process_paper()
         print()
+
+        # # Step 0.5: Extract experiment setup from paper
+        # print("📊 Step 0.5: Extracting experiment setup...")
+        # self.extract_experiment_setup()
+        # print()
 
         # Check if we're in refinement mode
         verdict_status = self.check_audit_verdict_exists()
@@ -557,11 +659,21 @@ At the end of your audit, output a JSON result block:
             if not plan_result.success:
                 print(f"❌ Implementation planning failed: {plan_result.error}")
                 sys.exit(1)
+
             try:
                 self.extract_impl_plan_from_result(plan_result)
             except ValueError as e:
                 print(f"❌ Failed to extract implementation plan path: {e}")
                 sys.exit(1)
+
+            # Only remove paper markdown after plan is confirmed written
+            try:
+                self.paper_md_file.unlink()
+                print(f"🗑️  Removed paper markdown after planning: {self.paper_md_file}")
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"⚠️  Failed to remove paper markdown {self.paper_md_file}: {exc}")
 
         # Initialize control variables
         coverage = 0
@@ -574,12 +686,58 @@ At the end of your audit, output a JSON result block:
             # Step 1: Attack implementation (skip if checkpoint says attack already done)
             if last_checkpoint_step != "attack":
                 impl_result = self.run_attack_implementation(iteration, is_refinement)
-                if not impl_result.success:
-                    print(f"❌ Attack implementation failed: {impl_result.error}")
+
+                # Check for timeout errors in JSON result and output text
+                error_msg = impl_result.error or ""
+                output_text = impl_result.output_text or ""
+                result_data = impl_result.metadata.get("result_data") or {}
+                result_status = result_data.get("status", "")
+                result_error = result_data.get("error", "")
+
+                # Check for timeout indicators (text-based only)
+                is_timeout = False
+
+                if "ATTACK TIMEOUT ERROR" in error_msg.upper():
+                    is_timeout = True
+                elif "ATTACK TIMEOUT ERROR" in output_text.upper():
+                    is_timeout = True
+                elif "ATTACK TIMEOUT ERROR" in str(result_error).upper():
+                    is_timeout = True
+                elif "TIMEOUT EXCEEDED" in error_msg.upper():
+                    is_timeout = True
+                elif "TIMEOUT EXCEEDED" in output_text.upper():
+                    is_timeout = True
+                elif "TIMEOUT EXCEEDED" in str(result_error).upper():
+                    is_timeout = True
+
+                if is_timeout:
+                    print(f"\n{'='*60}")
+                    print(f"⏱️  ATTACK IMPLEMENTATION TIMEOUT DETECTED")
+                    print(f"{'='*60}")
+                    print(f"\nThe attack implementation is taking too long per query.")
+                    print(f"This indicates the implementation needs optimization.")
+                    if self.config.per_query_timeout > 0:
+                        print(f"\nTimeout limit: {self.config.per_query_timeout} seconds per query")
+                    print(f"\nStopping workflow. Please review and optimize:")
+                    print(f"  - Reduce computational complexity")
+                    print(f"  - Use more efficient algorithms")
+                    print(f"  - Minimize API calls")
+                    print(f"  - Cache expensive computations")
+                    print(f"{'='*60}\n")
+                    sys.exit(3)  # Exit with code 3 for timeout
+
+                # Check for other failures
+                if not impl_result.success or result_status == "failure":
+                    if result_status == "failure":
+                        print(f"❌ Attack implementation failed (JSON status): {result_error}")
+                    else:
+                        print(f"❌ Attack implementation failed: {impl_result.error}")
                     sys.exit(1)
 
                 try:
                     attack_name = self.extract_attack_name_from_result(impl_result)
+                    # Write stable metadata file immediately
+                    self.write_metadata_file(attack_name, iteration, impl_result)
                     self.checkpoint.save_checkpoint(iteration, "attack", attack_name)
                 except ValueError as e:
                     print(f"❌ Failed to extract attack name: {e}")

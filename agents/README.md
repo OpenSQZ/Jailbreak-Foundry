@@ -150,14 +150,14 @@ attacks_paper_info/
 ### Attack Structure
 
 ```python
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 class ExampleAttack(ModernBaseAttack):
     """Brief description from paper."""
 
     NAME = "example_gen"  # Must end with _gen
-    PAPER = "Author et al. - Paper Title (Venue Year)"
+    PAPER = "Paper Title (arxiv_id)"  # e.g., "CC-BOS: Classical Chinese Jailbreak (2602.22983v2)"
 
     PARAMETERS = {
         "param": AttackParameter(
@@ -243,14 +243,33 @@ From paper Section 4 and Appendix D:
 
 ## Paper Preprocessor
 
-PDF to markdown conversion using Mistral OCR via Vertex AI:
+Pipeline: eligibility triage → PDF download → optional OCR via OpenAI-compatible API (LiteLLM proxy).
 
 ```bash
-python agents/utils/paper_preprocessor.py \
-    --pdf_path paper.pdf \
-    --output_dir output/ \
-    --service_account credentials.json
+# Full pipeline (triage + OCR)
+python agents/utils/paper_preprocessor.py --arxiv-id "2505.10066"
+
+# Skip eligibility triage (go straight to OCR)
+python agents/utils/paper_preprocessor.py --arxiv-id "2505.10066" --skip-triage
+
+# Skip OCR after PDF download/triage
+python agents/utils/paper_preprocessor.py --arxiv-id "2505.10066" --skip-ocr
+
+# Custom model
+python agents/utils/paper_preprocessor.py --arxiv-id "2505.10066" --model "bh/gemini-3.1-pro-preview"
 ```
+
+**Stages:**
+1. **Abstract triage** — Fetches arXiv metadata, queries LLM on title+abstract to check if paper is a black-box text-only jailbreak attack
+2. **Deep triage** — Sends first 8 pages of PDF to LLM to check for CPU-impractical operations (transformers, torch, PPL, local model inference, etc.)
+3. **Full OCR** — Optional chunked PDF-to-markdown extraction
+
+**Exit codes:**
+- `0` — Success
+- `1` — Processing error
+- `4` — Paper rejected by eligibility triage (not a CPU-runnable black-box text-only jailbreak)
+
+**Environment:** Requires `IIIS_API_KEY` env var. Uses LiteLLM proxy at `https://router.ai.iiis.co:9443/v1`.
 
 See [`agents/utils/README.md`](utils/README.md) for preprocessor details.
 

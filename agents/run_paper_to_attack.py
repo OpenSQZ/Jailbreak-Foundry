@@ -10,7 +10,7 @@ Usage:
 
 Example:
     python agents/run_paper_to_attack.py 2501.01830
-    python agents/run_paper_to_attack.py 2501.01830 --max-loops 5 --attack-model opus
+    python agents/run_paper_to_attack.py 2501.01830 --max-loops 5
 """
 
 import argparse
@@ -33,22 +33,21 @@ def main() -> None:
 Examples:
   %(prog)s 2501.01830
   %(prog)s 2501.01830 --max-loops 5
-  %(prog)s 2501.01830 --attack-model opus --audit-model gpt-5.1
-  %(prog)s 2501.01830 --cursor-agent-bin /path/to/cursor-agent
-  %(prog)s 2501.01830 --agent-variant no_code
-
-Agent Variants:
-  default    - Uses GitHub repositories when available
-  no_code    - Implements attacks without GitHub repos (for ablation study)
+  %(prog)s 2501.01830 --attack-model gpt-5.5
 
 Environment Variables:
-  MAX_LOOPS            Maximum number of iterations (default: 5)
-  CURSOR_AGENT_BIN     Path to cursor-agent binary (default: cursor-agent)
-  CURSOR_AGENT_FLAGS   Additional flags for cursor-agent
-  ATTACK_MODEL         Model for attack implementation (default: sonnet-4.5)
-  PLANNER_MODEL        Model for implementation planning (default: gpt-5.1)
-  AUDIT_MODEL          Model for auditing (default: gpt-5.1)
-  USE_PROXYCHAINS      Whether to use proxychains4 (default: true)
+  MAX_LOOPS              Maximum number of iterations (default: 5)
+  PAPER_SOURCE           Paper source for planning: pdf or ocr (default: pdf)
+  PLANNER_AGENT          Agent backend for planning (default: codex)
+  ATTACK_AGENT           Agent backend for attack implementation (default: codex)
+  AUDIT_AGENT            Agent backend for auditing (default: codex)
+  ATTACK_MODEL           Model for attack implementation (default: gpt-5.5)
+  PLANNER_MODEL          Model for implementation planning (default: gpt-5.5)
+  AUDIT_MODEL            Model for auditing (default: gpt-5.5)
+  CLAUDE_CODE_BIN        Path to Claude Code binary (default: claude)
+  CLAUDE_CODE_FLAGS      Additional flags for Claude Code CLI
+  CODEX_BIN              Path to Codex binary (default: codex)
+  CODEX_FLAGS            Additional flags for Codex CLI
         """
     )
 
@@ -65,46 +64,45 @@ Environment Variables:
     )
 
     parser.add_argument(
-        "--cursor-agent-bin",
-        default=os.environ.get("CURSOR_AGENT_BIN", "cursor-agent"),
-        help="Path to cursor-agent binary (default: cursor-agent)"
+        "--planner-agent",
+        default=os.environ.get("PLANNER_AGENT", "codex"),
+        help="Agent backend for planning (default: codex)"
     )
 
     parser.add_argument(
-        "--cursor-agent-flags",
-        default=os.environ.get("CURSOR_AGENT_FLAGS", ""),
-        help="Additional flags for cursor-agent (space-separated)"
+        "--attack-agent",
+        default=os.environ.get("ATTACK_AGENT", "codex"),
+        help="Agent backend for attack implementation (default: codex)"
     )
 
     parser.add_argument(
-        "--attack-model",
-        default=os.environ.get("ATTACK_MODEL", "sonnet-4.5"),
-        help="Model for attack implementation (default: sonnet-4.5)"
+        "--audit-agent",
+        default=os.environ.get("AUDIT_AGENT", "codex"),
+        help="Agent backend for auditing (default: codex)"
     )
 
     parser.add_argument(
         "--planner-model",
-        default=os.environ.get("PLANNER_MODEL", "gemini-3-pro"),
-        help="Model for implementation planning (default: gemini-3-pro)"
+        default=os.environ.get("PLANNER_MODEL", "gpt-5.5"),
+        help="Model for implementation planning (default: gpt-5.5)"
+    )
+    
+    parser.add_argument(
+        "--attack-model",
+        default=os.environ.get("ATTACK_MODEL", "gpt-5.5"),
+        help="Model for attack implementation (default: gpt-5.5)"
     )
 
     parser.add_argument(
         "--audit-model",
-        default=os.environ.get("AUDIT_MODEL", "gpt-5.1-codex-max"),
-        help="Model for auditing (default: gpt-5.1-codex-max)"
+        default=os.environ.get("AUDIT_MODEL", "gpt-5.5"),
+        help="Model for auditing (default: gpt-5.5)"
     )
-
     parser.add_argument(
-        "--no-proxychains",
-        action="store_true",
-        help="Disable proxychains4 (enabled by default)"
-    )
-
-    parser.add_argument(
-        "--agent-variant",
-        choices=["default", "no_code"],
-        default="default",
-        help="Agent variant to use: 'default' (with GitHub repos) or 'no_code' (without repos)"
+        "--paper-source",
+        choices=["pdf", "ocr"],
+        default=os.environ.get("PAPER_SOURCE", "pdf"),
+        help="Planner paper source: pdf skips OCR; ocr creates/uses paper markdown (default: pdf)"
     )
 
     parser.add_argument(
@@ -114,6 +112,14 @@ Environment Variables:
         help="Repository root directory (default: auto-detect)"
     )
 
+    parser.add_argument(
+        "--per-query-timeout",
+        type=int,
+        default=int(os.environ.get("PER_QUERY_TIMEOUT", "0")),
+        help="Maximum time (in seconds) per attack query during test execution (default: 0 - no timeout). "
+             "NOTE: Not recommended for implementation phase. Timeouts should be applied during testing, not implementation."
+    )
+
     args = parser.parse_args()
 
     # Build configuration
@@ -121,13 +127,14 @@ Environment Variables:
         arxiv_id=args.arxiv_id,
         repo_root=args.repo_root,
         max_loops=args.max_loops,
-        cursor_agent_bin=args.cursor_agent_bin,
-        cursor_agent_flags=args.cursor_agent_flags.split() if args.cursor_agent_flags else [],
+        planner_agent=args.planner_agent,
+        attack_agent=args.attack_agent,
+        audit_agent=args.audit_agent,
         attack_model=args.attack_model,
         planner_model=args.planner_model,
         audit_model=args.audit_model,
-        use_proxychains=not args.no_proxychains,
-        agent_variant=args.agent_variant
+        paper_source=args.paper_source,
+        per_query_timeout=args.per_query_timeout
     )
 
     # Print configuration
@@ -137,14 +144,12 @@ Environment Variables:
     print(f"Paper ID:        {config.arxiv_id}")
     print(f"Repo Root:       {config.repo_root}")
     print(f"Max Loops:       {config.max_loops}")
-    print(f"Agent Variant:   {config.agent_variant}")
-    print(f"Attack Model:    {config.attack_model}")
-    print(f"Planner Model:   {config.planner_model}")
-    print(f"Audit Model:     {config.audit_model}")
-    print(f"Cursor Binary:   {config.cursor_agent_bin}")
-    print(f"Use Proxychains: {config.use_proxychains}")
-    if config.cursor_agent_flags:
-        print(f"Extra Flags:     {' '.join(config.cursor_agent_flags)}")
+    print(f"Planner:         {config.planner_agent} / {config.planner_model}")
+    print(f"Paper Source:    {config.paper_source}")
+    print(f"Attack:          {config.attack_agent} / {config.attack_model}")
+    print(f"Audit:           {config.audit_agent} / {config.audit_model}")
+    if config.per_query_timeout > 0:
+        print(f"Query Timeout:   {config.per_query_timeout}s")
     print("="*60)
     print()
 

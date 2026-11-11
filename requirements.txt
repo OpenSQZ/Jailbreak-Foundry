@@ -1,5 +1,5 @@
 # Core dependencies from pyproject.toml
-litellm>=1.72.0
+litellm==1.80.0
 openai>=1.3.0
 datasets>=2.14.0
 huggingface-hub>=0.19.0
@@ -12,15 +12,11 @@ pyyaml>=6.0
 tqdm>=4.66.0
 colorama>=0.4.6
 requests>=2.32.0
-torch>=2.0.0
-transformers>=4.36.0
+arxiv>=2.4.1
 
 # Optional dependencies (extras)
-peft>=0.5.0
-accelerate>=0.32.0
-nanogcg>=0.1.0
 matplotlib>=3.7.0
 seaborn>=0.13.0
 PyPDF2>=3.0.0
 google-auth>=2.0.0
-inspect-ai>=0.3.0
+inspect-ai==0.3.213

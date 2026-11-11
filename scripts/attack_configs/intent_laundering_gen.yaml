@@ -1,0 +1,27 @@
+attack_name: "intent_laundering_gen"
+dataset: "assets/benchmark-advbench-50.csv"
+samples: 50
+all_samples: false
+restart: false
+max_workers: 1
+attempts_per_query: 5
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  launderer_model:
+    model: "gpt-4o"
+    provider: "openai"
+    api_key: null
+    api_base: null

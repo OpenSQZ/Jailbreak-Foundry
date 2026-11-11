@@ -8,8 +8,8 @@ import re
 import random
 import base64
 from typing import Dict, Any, List
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class S2CGen(ModernBaseAttack):
@@ -25,17 +25,10 @@ class S2CGen(ModernBaseAttack):
     PARAMETERS = {
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="The LLM used for reframing and key term extraction",
             cli_arg="--attack-model"
-        ),
-        "attack_provider": AttackParameter(
-            name="attack_provider",
-            param_type=str,
-            default="openai",
-            description="The provider for the attack LLM",
-            cli_arg="--attack-provider"
         ),
         "obfuscation_method": AttackParameter(
             name="obfuscation_method",
@@ -80,13 +73,14 @@ IMPORTANT NOTES
         """
         # Extract parameters
         attack_model = self.get_parameter_value("attack_model")
-        attack_provider = self.get_parameter_value("attack_provider")
         obfuscation_method = self.get_parameter_value("obfuscation_method")
         
         # Initialize attack LLM
         attack_llm = LLMLiteLLM.from_config(
-            model_name=attack_model,
-            provider=attack_provider
+            model_name=attack_model["model"],
+            provider=attack_model["provider"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base")
         )
         
         cost_tracker = kwargs.get("cost_tracker")

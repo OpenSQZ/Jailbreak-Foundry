@@ -138,6 +138,16 @@ class LLMLiteLLM(BaseLLM):
             llm_provider = "openai"
             llm_api_key = api_key or os.getenv("INFINI_API_KEY")
             llm_api_base = "https://cloud.infini-ai.com/maas/v1"
+        elif provider == "iiis":
+            llm_provider = "openai"
+            llm_api_key = api_key or os.getenv("IIIS_API_KEY")
+            llm_api_base = "https://router.ai.iiis.co:9443/v1"
+        elif provider == "local-llama2-7b":
+            llm_provider = "openai"
+            llm_api_base = "http://10.210.22.10:30254/v1"
+        elif provider == "local-llama3-8b":
+            llm_provider = "openai"
+            llm_api_base = "http://10.210.22.10:30253/v1"
         elif provider == "bedrock":
             llm_api_key = api_key or os.getenv("AWS_BEARER_TOKEN_BEDROCK")
         elif provider == "vertex_ai":
@@ -208,6 +218,37 @@ class LLMLiteLLM(BaseLLM):
 
         # Initialize query counter
         self.query_count = 0
+
+    def _log_query_progress(
+        self,
+        event: str,
+        query_id: str,
+        messages: List[Dict[str, str]],
+        elapsed: Optional[float] = None,
+        usage: Optional[Dict[str, int]] = None,
+        error: Optional[Exception] = None,
+    ) -> None:
+        """Log compact live-call progress without prompt text or credentials."""
+        prompt_chars = sum(len(str(message.get("content", ""))) for message in messages)
+        parts = [
+            f"LLM {event}",
+            f"model={self.model_identifier}",
+            f"messages={len(messages)}",
+            f"prompt_chars={prompt_chars}",
+        ]
+        if elapsed is not None:
+            parts.append(f"elapsed={elapsed:.1f}s")
+        if usage:
+            parts.append(f"tokens={usage.get('total_tokens', 0)}")
+        if error:
+            parts.append(f"error={type(error).__name__}: {str(error)[:160]}")
+        logger.info(" | ".join(parts))
+
+    def _redact_completion_kwargs(self, completion_kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        redacted = completion_kwargs.copy()
+        if redacted.get("api_key"):
+            redacted["api_key"] = "***REDACTED***"
+        return redacted
     
     def _make_messages(self, prompt: str) -> List[Dict[str, str]]:
         """
@@ -303,7 +344,8 @@ class LLMLiteLLM(BaseLLM):
 
     def _next_query_id(self) -> str:
         self.query_count += 1
-        return f"{self.model_name}_{self.query_count}_{int(time.time())}"
+        safe_name = self.model_name.replace("/", "_")
+        return f"{safe_name}_{self.query_count}_{int(time.time())}"
 
     def _log_json(self, path: str, payload: Dict[str, Any]) -> None:
         with open(path, "w") as f:
@@ -435,6 +477,8 @@ class LLMLiteLLM(BaseLLM):
         for prompt in prompts_list:
             completion_kwargs = None
             query_id = None
+            messages = None
+            query_started_at = None
             try:
                 # Format prompt as messages
                 # If it's already a pre-formatted messages list, use it directly
@@ -458,10 +502,13 @@ class LLMLiteLLM(BaseLLM):
                             "phase": phase,
                         },
                     )
-                
+
                 # Make the API call
+                query_started_at = time.monotonic()
+                self._log_query_progress("start", query_id, messages)
                 completion_kwargs = self._build_completion_kwargs(messages, **kwargs)
                 response = self._completion_with_retries(completion_kwargs)
+                elapsed = time.monotonic() - query_started_at
                 response_text = response.choices[0].message.content
                     
                 reasoning_content = getattr(response.choices[0].message, "reasoning_content", "")
@@ -500,6 +547,7 @@ class LLMLiteLLM(BaseLLM):
                     "total_tokens": response.usage.total_tokens,
                     "reasoning_tokens": reasoning_tokens
                 }
+                self._log_query_progress("done", query_id, messages, elapsed=elapsed, usage=usage_dict)
 
                 active_cost_tracker = self._resolve_cost_tracker(cost_tracker)
 
@@ -507,13 +555,13 @@ class LLMLiteLLM(BaseLLM):
                     active_cost_tracker.add_usage(self.model_identifier, usage_dict)
 
                 responses.append(RichResponse(response_text, usage_dict, reasoning_content))
-                
+
             except Exception as e:
                 if completion_kwargs is not None:
                     logger.error(
                         "Error querying model: %s, completion_kwargs: %s",
                         str(e),
-                        json.dumps(completion_kwargs, indent=2),
+                        json.dumps(self._redact_completion_kwargs(completion_kwargs), indent=2),
                     )
                 else:
                     logger.error("Error querying model: %s", str(e))

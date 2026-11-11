@@ -75,26 +75,30 @@ class AttackRegistry:
         # Check if attack is already loaded
         if attack_name in self._loaded_attacks:
             return self._loaded_attacks[attack_name]
-        
-        # Try to find the attack in discovered files
-        attack_class = None
-        
-        # First, try direct lookup by attack name
+
+        # Try to find the attack in discovered files (package auto-discovery)
         if attack_name in self._attack_metadata:
             attack_class = self._load_attack_from_metadata(attack_name, self._attack_metadata[attack_name])
-        
-        if attack_class is None:
-            # Generate helpful error message
-            available_files = list(self._attack_metadata.keys())
-            loaded_attacks = [cls.NAME for cls in self._loaded_attacks.values()]
-            raise ValueError(
-                f"Attack '{attack_name}' not found. "
-                f"Available attack files: {available_files}. "
-                f"Loaded attacks: {loaded_attacks}. "
-                f"This might be due to missing dependencies or the attack class not being properly defined."
-            )
-        
-        return attack_class
+            if attack_class is not None:
+                return attack_class
+
+        # Fallback: look for {attack_name}.py in CWD (pip user with co-located files)
+        cwd_file = Path.cwd() / f"{attack_name}.py"
+        if cwd_file.exists():
+            logger.info(f"Found {attack_name}.py in working directory, loading externally")
+            self.load_external_attack(str(cwd_file))
+            if attack_name in self._loaded_attacks:
+                return self._loaded_attacks[attack_name]
+
+        # Generate helpful error message
+        available_files = list(self._attack_metadata.keys())
+        loaded_attacks = [cls.NAME for cls in self._loaded_attacks.values()]
+        raise ValueError(
+            f"Attack '{attack_name}' not found. "
+            f"Available attack files: {available_files}. "
+            f"Loaded attacks: {loaded_attacks}. "
+            f"This might be due to missing dependencies or the attack class not being properly defined."
+        )
     
     def _load_attack_from_metadata(self, file_stem: str, metadata: Dict[str, str]) -> Optional[Type[ModernBaseAttack]]:
         """Load attack class from file metadata."""
@@ -111,16 +115,48 @@ class AttackRegistry:
             
             # Find attack classes in the module
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, ModernBaseAttack) and 
-                    obj != ModernBaseAttack and 
-                    hasattr(obj, 'NAME') and 
+                if (issubclass(obj, ModernBaseAttack) and
+                    obj != ModernBaseAttack and
+                    hasattr(obj, 'NAME') and
                     obj.NAME):
-                    
+
+                    # Enforce NAME matches file stem
+                    if obj.NAME != file_stem:
+                        raise ValueError(
+                            f"Class {name} in {module_name} has NAME = \"{obj.NAME}\" "
+                            f"but the file is named \"{file_stem}.py\". "
+                            f"Fix: set NAME = \"{file_stem}\""
+                        )
+
                     # Cache the loaded attack
                     self._loaded_attacks[obj.NAME] = obj
                     logger.debug(f"Loaded attack: {obj.NAME} from {module_name}")
                     return obj
-            
+
+            # Module loaded but no class matched — diagnose why
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if obj is ModernBaseAttack:
+                    continue
+                # Wrong import path: class has "ModernBaseAttack" in MRO by name
+                # but issubclass() fails due to duplicate module identity
+                base_names = [b.__name__ for b in getattr(obj, '__mro__', [])]
+                if 'ModernBaseAttack' in base_names and not issubclass(obj, ModernBaseAttack):
+                    actual_mod = next(
+                        (b.__module__ for b in obj.__mro__ if b.__name__ == 'ModernBaseAttack'), '?'
+                    )
+                    raise ImportError(
+                        f"Class {name} in {module_name} inherits ModernBaseAttack from "
+                        f"'{actual_mod}', but the registry expects it from "
+                        f"'{ModernBaseAttack.__module__}'. "
+                        f"Fix: use 'from jbfoundry.attacks.base import ModernBaseAttack' (not 'from src.jbfoundry...')."
+                    )
+                # Missing NAME attribute
+                if issubclass(obj, ModernBaseAttack) and not getattr(obj, 'NAME', None):
+                    raise ValueError(
+                        f"Class {name} in {module_name} extends ModernBaseAttack "
+                        f"but has no NAME attribute. Add: NAME = \"{file_stem}\""
+                    )
+
             logger.warning(f"No valid attack class found in {module_name}")
             return None
             
@@ -165,6 +201,35 @@ class AttackRegistry:
 
         self._loaded_attacks[attack_name] = attack_class
         logger.debug(f"Manually registered attack: {attack_name}")
+
+    def load_external_attack(self, attack_path: str):
+        """Load an attack class from an external .py file and register it.
+
+        Args:
+            attack_path: Path to a .py file containing a ModernBaseAttack subclass.
+        """
+        import importlib.util
+
+        path = Path(attack_path).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Attack file not found: {path}")
+
+        spec = importlib.util.spec_from_file_location("external_attack", str(path))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        registered = False
+        for obj in vars(mod).values():
+            if (isinstance(obj, type)
+                    and issubclass(obj, ModernBaseAttack)
+                    and obj is not ModernBaseAttack
+                    and getattr(obj, 'NAME', None)):
+                self.manual_register(obj)
+                logger.info(f"Loaded external attack: {obj.NAME} from {path}")
+                registered = True
+
+        if not registered:
+            raise ValueError(f"No ModernBaseAttack subclass found in {path}")
 
     def list_attacks(self) -> List[str]:
         """List all available attack names.

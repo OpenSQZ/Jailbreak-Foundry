@@ -2,10 +2,17 @@
 
 import logging
 import sys
+import time
 from typing import Optional
 
 
-class ColoredFormatter(logging.Formatter):
+class UTCFormatter(logging.Formatter):
+    """Formatter that renders asctime in UTC."""
+
+    converter = time.gmtime
+
+
+class ColoredFormatter(UTCFormatter):
     """Formatter with ANSI colors and shortened module names."""
     COLORS = {
         'DEBUG': '\033[36m',      # Cyan
@@ -33,10 +40,10 @@ class ColoredFormatter(logging.Formatter):
         level_name = f"{level_color}{record.levelname:<7}{self.RESET}"
 
         # Dim the timestamp and module name
-        timestamp = f"{self.DIM}{self.formatTime(record, '%H:%M:%S')}{self.RESET}"
+        timestamp = f"{self.DIM}{self.formatTime(record, '[%Y-%m-%d %H:%M:%S]')}{self.RESET}"
         module = f"{self.DIM}{short_name}{self.RESET}"
 
-        # Format: [TIME] LEVEL module | message
+        # Format: [UTC_TIME] LEVEL module | message
         return f"{timestamp} {level_name} {module} | {record.getMessage()}"
 
 
@@ -79,7 +86,7 @@ def configure_logging(
         if format_string is None:
             format_string = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
         stream_handler.setFormatter(
-            logging.Formatter(fmt=format_string, datefmt="%H:%M:%S")
+            UTCFormatter(fmt=format_string, datefmt="[%Y-%m-%d %H:%M:%S]")
         )
 
     jbfoundry_logger.addHandler(stream_handler)

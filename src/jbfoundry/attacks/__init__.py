@@ -7,6 +7,8 @@ This module provides both the legacy interface and the new modular system.
 import logging
 from abc import ABC, abstractmethod
 
+from .base import AttackPrompt
+
 logger = logging.getLogger(__name__)
 
 # Legacy base class for backward compatibility
@@ -21,9 +23,9 @@ class BaseAttack(ABC):
         self.params = kwargs
     
     @abstractmethod
-    def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> str:
+    def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
         """
-        Generate an attack string based on the prompt, goal, and target.
+        Generate an attack payload based on the prompt, goal, and target.
         
         Args:
             prompt: The original prompt to be jailbroken
@@ -32,7 +34,8 @@ class BaseAttack(ABC):
             **kwargs: Additional parameters
             
         Returns:
-            The jailbroken prompt
+            The jailbroken prompt as either a string or preformatted chat
+            messages.
         """
         pass
     
@@ -101,4 +104,4 @@ __all__ = [
     "MODERN_SYSTEM_AVAILABLE", "LEGACY_AVAILABLE"
 ]
 
-# Legacy classes removed - only modular system available 
+# Legacy classes removed - only modular system available

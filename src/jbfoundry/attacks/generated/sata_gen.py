@@ -16,8 +16,8 @@ import re
 import random
 import json
 import os
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class SATAAttack(ModernBaseAttack):
@@ -57,15 +57,15 @@ class SATAAttack(ModernBaseAttack):
         ),
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="gpt-3.5-turbo-1106",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo-1106', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use for attack generation (masking, paraphrasing, etc.)",
             cli_arg="--sata_attack_model"
         ),
         "wiki_model": AttackParameter(
             name="wiki_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model to use for wiki entry generation in MLM method",
             cli_arg="--sata_wiki_model"
         )
@@ -289,8 +289,10 @@ class SATAAttack(ModernBaseAttack):
         temperature = self._get_param("temperature")
         
         llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=attack_model,
+            provider=attack_model["provider"],
+            model_name=attack_model["model"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base"),
             temperature=temperature
         )
         
@@ -541,8 +543,10 @@ However, you only need to keep these words in mind and do not say them! After th
         temperature = self._get_param("temperature")
         
         llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=wiki_model,
+            provider=wiki_model["provider"],
+            model_name=wiki_model["model"],
+            api_key=wiki_model.get("api_key"),
+            api_base=wiki_model.get("api_base"),
             temperature=0.9  # Higher temperature for creative wiki generation
         )
         
@@ -582,8 +586,10 @@ Restrict the length of your response to 6 paragraphs.'''
         temperature = self._get_param("temperature")
         
         llm = LLMLiteLLM.from_config(
-            provider="openai",
-            model_name=attack_model,
+            provider=attack_model["provider"],
+            model_name=attack_model["model"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base"),
             temperature=0.9
         )
         

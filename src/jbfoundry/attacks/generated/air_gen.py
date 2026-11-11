@@ -10,8 +10,8 @@ is referenced implicitly (e.g., "the content in paragraph K").
 """
 
 from typing import Dict, Any, Optional, List
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 
 class AirGen(ModernBaseAttack):
@@ -31,17 +31,10 @@ class AirGen(ModernBaseAttack):
         ),
         "rewrite_model": AttackParameter(
             name="rewrite_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used to generate the AIR outline",
             cli_arg="--rewrite_model"
-        ),
-        "rewrite_provider": AttackParameter(
-            name="rewrite_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for rewrite model",
-            cli_arg="--rewrite_provider"
         ),
         "use_target_for_rewrite": AttackParameter(
             name="use_target_for_rewrite",
@@ -405,11 +398,12 @@ Paragraph 5's title should briefly summarize the content of your first sentence(
             return self._get_target_llm()
         
         rewrite_model = self.get_parameter_value("rewrite_model")
-        rewrite_provider = self.get_parameter_value("rewrite_provider")
         
         return LLMLiteLLM.from_config(
-            model_name=rewrite_model,
-            provider=rewrite_provider
+            model_name=rewrite_model["model"],
+            provider=rewrite_model["provider"],
+            api_key=rewrite_model.get("api_key"),
+            api_base=rewrite_model.get("api_base")
         )
     
     def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> List[Dict[str, str]]:

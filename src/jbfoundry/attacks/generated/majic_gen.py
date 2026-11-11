@@ -11,8 +11,8 @@ import numpy as np
 import random
 import logging
 
-from ..base import ModernBaseAttack, AttackParameter
-from ...llm.litellm import LLMLiteLLM
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
+from jbfoundry.llm.litellm import LLMLiteLLM
 
 logger = logging.getLogger(__name__)
 
@@ -116,47 +116,26 @@ Rewritten request (output only the rewritten text):"""
         ),
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="mistral-7b",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used to rewrite prompts with strategies",
             cli_arg="--attacker_model"
         ),
-        "attacker_provider": AttackParameter(
-            name="attacker_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for attacker model",
-            cli_arg="--attacker_provider"
-        ),
         "target_model": AttackParameter(
             name="target_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Target model to attack (used in internal loop)",
             cli_arg="--target_model"
         ),
-        "target_provider": AttackParameter(
-            name="target_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for target model",
-            cli_arg="--target_provider"
-        ),
         "evaluator_model": AttackParameter(
             name="evaluator_model",
-            param_type=str,
-            default="gpt-4o-mini",
+            param_type=dict,
+            default={'model': 'gpt-4o-mini', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used to evaluate success",
             cli_arg="--evaluator_model"
         ),
-        "evaluator_provider": AttackParameter(
-            name="evaluator_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for evaluator model",
-            cli_arg="--evaluator_provider"
-        ),
-    }
+            }
     
     def __init__(self, args=None, **kwargs):
         """Initialize MAJIC attack with shared state."""
@@ -170,12 +149,13 @@ Rewritten request (output only the rewritten text):"""
         self.temperature = self.get_parameter_value("temperature")
         self.reset_factor = self.get_parameter_value("reset_factor")
         self.attacker_model = self.get_parameter_value("attacker_model")
-        self.attacker_provider = self.get_parameter_value("attacker_provider")
+        self.attacker_provider = self.attacker_model["provider"]
         self.target_model = args.model
         self.target_provider = args.provider
+        self.target_api_key = args.api_key
         self.target_api_base = args.api_base
         self.evaluator_model = self.get_parameter_value("evaluator_model")
-        self.evaluator_provider = self.get_parameter_value("evaluator_provider")
+        self.evaluator_provider = self.evaluator_model["provider"]
         
         # Initialize strategy list (keys from STRATEGIES dict)
         self.strategy_keys = list(self.STRATEGIES.keys())
@@ -205,8 +185,10 @@ Rewritten request (output only the rewritten text):"""
         """Initialize LLM instances if not already done."""
         if self.attacker_llm is None:
             self.attacker_llm = LLMLiteLLM.from_config(
-                provider=self.attacker_provider,
-                model_name=self.attacker_model,
+                provider=self.attacker_model["provider"],
+                model_name=self.attacker_model["model"],
+                api_key=self.attacker_model.get("api_key"),
+                api_base=self.attacker_model.get("api_base"),
                 temperature=0.7
             )
             logger.info(f"Initialized attacker LLM: {self.attacker_provider}/{self.attacker_model}")
@@ -215,6 +197,7 @@ Rewritten request (output only the rewritten text):"""
             self.target_llm = LLMLiteLLM.from_config(
                 provider=self.target_provider,
                 model_name=self.target_model,
+                api_key=self.target_api_key,
                 api_base=self.target_api_base,
                 temperature=1.0
             )
@@ -222,8 +205,10 @@ Rewritten request (output only the rewritten text):"""
         
         if self.evaluator_llm is None:
             self.evaluator_llm = LLMLiteLLM.from_config(
-                provider=self.evaluator_provider,
-                model_name=self.evaluator_model,
+                provider=self.evaluator_model["provider"],
+                model_name=self.evaluator_model["model"],
+                api_key=self.evaluator_model.get("api_key"),
+                api_base=self.evaluator_model.get("api_base"),
                 temperature=0.0
             )
             logger.info(f"Initialized evaluator LLM: {self.evaluator_provider}/{self.evaluator_model}")

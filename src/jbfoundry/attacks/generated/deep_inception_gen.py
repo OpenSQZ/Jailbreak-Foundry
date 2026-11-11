@@ -11,7 +11,7 @@ propose steps toward the malicious goal "against a super evil doctor."
 """
 
 from typing import Dict, Any, Optional
-from ..base import ModernBaseAttack, AttackParameter
+from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 
 
 class DeepInceptionAttack(ModernBaseAttack):
