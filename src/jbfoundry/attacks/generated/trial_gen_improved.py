@@ -60,68 +60,40 @@ from jbfoundry.llm.litellm import LLMLiteLLM
 logger = logging.getLogger(__name__)
 
 
-class TrialGen(ModernBaseAttack):
+class TrialGenImproved(ModernBaseAttack):
     """TRIAL attack implementation."""
     
-    NAME = "trial_gen"
+    NAME = "trial_gen_improved"
     PAPER = "TRIAL: Trolley-problem Reasoning for Interactive Attack Logic (2509.05367)"
     
     PARAMETERS = {
         "attack_model": AttackParameter(
             name="attack_model",
-            param_type=str,
-            default="glm-4-plus",
+            param_type=dict,
+            default={'model': 'glm-4-plus', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used for generating queries",
             cli_arg="--attack_model"
         ),
-        "attack_provider": AttackParameter(
-            name="attack_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for attack model",
-            cli_arg="--attack_provider"
-        ),
         "helper_model": AttackParameter(
             name="helper_model",
-            param_type=str,
-            default="gpt-4o",
-            description="Model for clue extraction and scenario generation (defaults to gpt-4o per plan)",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': None, 'api_key': None, 'api_base': None},
+            description="Model for clue extraction and scenario generation (provider defaults to attack_model's)",
             cli_arg="--helper_model"
-        ),
-        "helper_provider": AttackParameter(
-            name="helper_provider",
-            param_type=str,
-            default=None,
-            description="Provider for helper model (defaults to attack_provider)",
-            cli_arg="--helper_provider"
         ),
         "judge_model": AttackParameter(
             name="judge_model",
-            param_type=str,
-            default="llama-3-70b-instruct",
+            param_type=dict,
+            default={'model': 'llama-3-70b-instruct', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model for evaluating jailbreak success",
             cli_arg="--judge_model"
         ),
-        "judge_provider": AttackParameter(
-            name="judge_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for judge model",
-            cli_arg="--judge_provider"
-        ),
         "target_model": AttackParameter(
             name="target_model",
-            param_type=str,
-            default="gpt-4o",
+            param_type=dict,
+            default={'model': 'gpt-4o', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Target victim model for interactive attack",
             cli_arg="--target_model"
-        ),
-        "target_provider": AttackParameter(
-            name="target_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for target model",
-            cli_arg="--target_provider"
         ),
         "n_iterations": AttackParameter(
             name="n_iterations",
@@ -250,44 +222,48 @@ Output only the question text with no preamble or formatting."""
         
         # Initialize attack LLM
         attack_model = self.get_parameter_value("attack_model")
-        attack_provider = self.get_parameter_value("attack_provider")
         attack_temp = self.get_parameter_value("attack_temperature")
         
         self.attack_llm = LLMLiteLLM.from_config(
-            provider=attack_provider,
-            model_name=attack_model,
+            provider=attack_model["provider"],
+            model_name=attack_model["model"],
+            api_key=attack_model.get("api_key"),
+            api_base=attack_model.get("api_base"),
             temperature=attack_temp
         )
         
-        # Initialize helper LLM (defaults to gpt-4o per plan)
+        # Initialize helper LLM (provider falls back to attack_model's)
         helper_model = self.get_parameter_value("helper_model")
-        helper_provider = self.get_parameter_value("helper_provider") or attack_provider
         
         self.helper_llm = LLMLiteLLM.from_config(
-            provider=helper_provider,
-            model_name=helper_model,
+            provider=helper_model.get("provider") or attack_model["provider"],
+            model_name=helper_model["model"],
+            api_key=helper_model.get("api_key"),
+            api_base=helper_model.get("api_base"),
             temperature=attack_temp
         )
         
         # Initialize judge LLM
         judge_model = self.get_parameter_value("judge_model")
-        judge_provider = self.get_parameter_value("judge_provider")
         judge_temp = self.get_parameter_value("judge_temperature")
         
         self.judge_llm = LLMLiteLLM.from_config(
-            provider=judge_provider,
-            model_name=judge_model,
+            provider=judge_model["provider"],
+            model_name=judge_model["model"],
+            api_key=judge_model.get("api_key"),
+            api_base=judge_model.get("api_base"),
             temperature=judge_temp
         )
         
         # Initialize target LLM for interactive attack
         target_model = self.get_parameter_value("target_model")
-        target_provider = self.get_parameter_value("target_provider")
         target_temp = self.get_parameter_value("target_temperature")
         
         self.target_llm = LLMLiteLLM.from_config(
-            provider=target_provider,
-            model_name=target_model,
+            provider=target_model["provider"],
+            model_name=target_model["model"],
+            api_key=target_model.get("api_key"),
+            api_base=target_model.get("api_base"),
             temperature=target_temp
         )
         

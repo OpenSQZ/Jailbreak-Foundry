@@ -1,0 +1,49 @@
+attack_name: "haca_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: true
+max_workers: 1
+attempts_per_query: 10
+attempts_success_threshold: 1
+
+victim_model:
+  model: "iiis/qwen3-vl-30b-a3b-instruct-fp8-sqz1"
+  provider: "iiis"
+  api_key: null
+  api_base: null
+  supports_vision: true
+  request_timeout: 600
+
+eval_model:
+  model: "huihui-glm-5.3-flash"
+  provider: "local-glm-abliterated"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  max_query_num: 10
+  use_planner: true
+  random_selection: false
+  disable_planner_fixed: false
+  diversify_on_retry: true
+  seed: 42
+  payload_order: "image_then_text"
+  image_generator_backend: "pillow_text"
+  image_width: 1024
+  image_height: 1024
+  planner_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  text_helper_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  image_prompt_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null

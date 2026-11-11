@@ -24,12 +24,12 @@ class AttackWorkflowConfig:
     arxiv_id: str
     repo_root: Path
     max_loops: int = 10
-    planner_agent: str = "codex"
-    attack_agent: str = "codex"
-    audit_agent: str = "codex"
-    attack_model: str = "gpt-5.5"
-    planner_model: str = "gpt-5.5"
-    audit_model: str = "gpt-5.5"
+    planner_agent: str = "cursor"
+    attack_agent: str = "cursor"
+    audit_agent: str = "cursor"
+    attack_model: str = "gpt-5.3-codex-high"
+    planner_model: str = "gpt-5.3-codex-high"
+    audit_model: str = "gpt-5.3-codex-high"
     paper_source: str = "pdf"  # "pdf" skips OCR; "ocr" creates/uses paper markdown
     per_query_timeout: int = 0  # Maximum time (seconds) per attack query (0 = no timeout)
 
@@ -86,6 +86,12 @@ class PaperToAttackWorkflow:
         self.planner_playbook = playbook_dir / "attack_planner.md"
         self.attack_playbook = playbook_dir / "attack_implementation.md"
         self.audit_playbook = playbook_dir / "attack_auditor.md"
+        self.multimodal_planner_supplement = (
+            playbook_dir / "multimodal_planner_supplement.md"
+        )
+        self.multimodal_implementation_supplement = (
+            playbook_dir / "multimodal_implementation_supplement.md"
+        )
 
         self.log_dir = self.repo_root / ".agent_runs" / "attack" / config.arxiv_id
 
@@ -110,6 +116,15 @@ class PaperToAttackWorkflow:
             if not playbook.exists():
                 print(f"❌ Missing required file: {playbook}", file=sys.stderr)
                 sys.exit(1)
+
+    def _load_optional_playbook_supplement(self, path: Path) -> str:
+        """Load an optional multimodal supplement for extra_instructions."""
+        if not path.exists():
+            return ""
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        return f"\n\n---\nMULTIMODAL SUPPLEMENT ({path.name}):\n{content}\n"
 
     def _update_current_source_path(self) -> None:
         """Update pointer to current source document (paper or implementation plan)."""
@@ -178,7 +193,7 @@ class PaperToAttackWorkflow:
 
         if result.returncode != 0:
             if result.returncode == 4:
-                print(f"⚠️  Paper rejected by eligibility triage (not a CPU-runnable black-box text-only jailbreak)")
+                print(f"⚠️  Paper rejected by eligibility triage (not a CPU-runnable supported black-box jailbreak)")
                 sys.exit(4)
             print(f"❌ Paper preprocessing failed!")
             sys.exit(1)
@@ -348,6 +363,9 @@ If the implementation fails (including timeout errors), report:
 }}
 ```{timeout_instruction}
 """
+        extra_instructions += self._load_optional_playbook_supplement(
+            self.multimodal_implementation_supplement
+        )
 
         # Build prompt
         prompt = self.attack_runner.build_prompt(
@@ -412,6 +430,9 @@ At the end of your planning, output a JSON result block:
 }}
 ```
 """
+        extra_instructions += self._load_optional_playbook_supplement(
+            self.multimodal_planner_supplement
+        )
 
         prompt = self.planner_runner.build_prompt(
             f"attack-planning-iter-{iteration}",

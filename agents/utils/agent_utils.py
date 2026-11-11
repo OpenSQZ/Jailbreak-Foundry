@@ -102,13 +102,49 @@ def find_in_json(data: Any, key: str) -> Any:
     return None
 
 
+def _iter_balanced_json_objects(text: str):
+    """
+    Yield every top-level, brace-balanced ``{...}`` substring in ``text``.
+
+    Scans character by character while respecting JSON string literals (so
+    braces inside quoted values do not affect nesting depth) and escapes.
+    Handles arbitrary nesting depth, which the previous single-level regex
+    could not.
+    """
+    depth = 0
+    start = -1
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == '}':
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    yield text[start:i + 1]
+                    start = -1
+
+
 def extract_json_result(text: str) -> Optional[Dict[str, Any]]:
     """
     Extract JSON result block from agent output.
 
     Tries multiple patterns:
     1. Markdown code blocks: ```json {...} ```
-    2. Raw JSON objects: {...}
+    2. Any brace-balanced raw JSON object (arbitrary nesting depth)
 
     Args:
         text: Full text output from agent
@@ -126,17 +162,17 @@ def extract_json_result(text: str) -> Optional[Dict[str, Any]]:
         except json.JSONDecodeError:
             pass  # Fall through to try raw JSON
 
-    # Try 2: Look for raw JSON objects {...}
-    json_objects = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-
-    # Try parsing each found object, starting from the end (most recent)
-    for json_str in reversed(json_objects):
+    # Try 2: Scan for brace-balanced JSON objects (handles unfenced output and
+    # arbitrarily nested results). Prefer the last object carrying a result
+    # signal so a nested sub-object is never mistaken for the full payload.
+    candidates = list(_iter_balanced_json_objects(text))
+    for json_str in reversed(candidates):
         try:
             parsed = json.loads(json_str)
-            if isinstance(parsed, dict) and ('status' in parsed or 'result' in parsed):
-                return parsed
         except json.JSONDecodeError:
             continue
+        if isinstance(parsed, dict) and ('status' in parsed or 'result' in parsed):
+            return parsed
 
     return None
 
@@ -613,6 +649,199 @@ class CodexAgentRunner(AgentRunner):
         )
 
 
+class CursorAgentRunner(AgentRunner):
+    """Cursor CLI (cursor-agent / agent) runner.
+
+    A drop-in alternative to CodexAgentRunner for the planner/coder passes.
+    Reads the binary name and extra flags from environment variables so the
+    caller can switch planner/coder to Cursor without touching code:
+
+        --planner-agent cursor --attack-agent cursor --audit-agent codex
+
+    Auth: the CLI reads CURSOR_API_KEY from the environment (generated in
+    Cursor Dashboard -> API Keys). The runner inherits the parent env so the
+    key is passed through automatically; no code change needed to rotate it.
+
+    Output: the CLI emits one JSON object per line in stream-json mode. We
+    accumulate assistant text segments and reuse the module-level
+    extract_json_result() (brace-balanced) to recover the final structured
+    result, so the Bug1 fix applies identically to Cursor passes.
+    """
+
+    def __init__(self, repo_root: Optional[Path] = None, max_retries: int = 3):
+        super().__init__(repo_root=repo_root, max_retries=max_retries)
+        # Binary name: docs currently use `agent`; older installs used
+        # `cursor-agent`. Override via CURSOR_AGENT_BIN if your install differs.
+        self._bin = os.environ.get("CURSOR_AGENT_BIN", "cursor-agent")
+        self._flags = (
+            os.environ.get("CURSOR_AGENT_FLAGS", "").split()
+            if os.environ.get("CURSOR_AGENT_FLAGS")
+            else []
+        )
+
+    @property
+    def agent_name(self) -> str:
+        return "Cursor CLI"
+
+    @property
+    def bin_path(self) -> str:
+        return self._bin
+
+    def _build_command(self, prompt: str, model: str) -> list:
+        cmd = [
+            self._bin,
+            "-p",                       # print (non-interactive) mode
+            "--force",                  # auto-approve file writes / shell
+            "--output-format", "stream-json",
+            "--model", model,
+        ]
+        # Untrusted workspaces require --trust to run headless; --force implies
+        # it in recent versions but adding it is harmless on older ones.
+        if os.environ.get("CURSOR_AGENT_TRUST", "1") == "1":
+            cmd.append("--trust")
+        cmd.extend(self._flags)
+        cmd.append(prompt)
+        return cmd
+
+    def _parse_output(
+        self,
+        process: subprocess.Popen,
+        log_file: Optional[Path] = None
+    ) -> AgentResult:
+        """Parse streaming JSON output from Cursor CLI (stream-json mode).
+
+        Event shapes (per Cursor CLI docs / legacy cursor-agent):
+        - system/init: carries the resolved model name
+        - assistant: message content segments to concatenate
+        - tool_call started/completed: tool accounting + console trace
+        - result: final duration/stats
+        """
+        accumulated_text = ""
+        tool_count = 0
+        model_name = "unknown"
+        start_time = time.time()
+
+        log_handle = None
+        if log_file:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            log_handle = open(log_file, 'w')
+
+        print("🚀 Parsing Cursor CLI stream...")
+
+        parse_exception = None
+        try:
+            for line in process.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                msg_type = data.get("type", "")
+                subtype = data.get("subtype", "")
+
+                if msg_type == "system":
+                    if subtype == "init":
+                        model_name = data.get("model", model_name)
+                        print(f"🤖 Using model: {model_name}")
+
+                elif msg_type == "assistant":
+                    content = data.get("message", {}).get("content", [{}])[0].get("text", "")
+                    if content:
+                        print(f"\n\033[94m{content}\033[0m\n", end="", flush=True)
+                        accumulated_text += content + "\n\n"
+                        if log_handle:
+                            log_handle.seek(0)
+                            log_handle.write(accumulated_text)
+                            log_handle.truncate()
+                            log_handle.flush()
+
+                elif msg_type == "tool_call":
+                    if subtype == "started":
+                        tool_count += 1
+                        tool_call = data.get("tool_call", {})
+                        if "writeToolCall" in tool_call:
+                            path = tool_call["writeToolCall"].get("args", {}).get("path", "unknown")
+                            print(f"\n🔧 Tool #{tool_count}: Creating {path}")
+                        elif "readToolCall" in tool_call:
+                            path = tool_call["readToolCall"].get("args", {}).get("path", "unknown")
+                            print(f"\n📖 Tool #{tool_count}: Reading {path}")
+                        elif "bashToolCall" in tool_call:
+                            print(f"\n⚙️  Tool #{tool_count}: Running bash command")
+
+                    elif subtype == "completed":
+                        tool_call = data.get("tool_call", {})
+                        if "writeToolCall" in tool_call:
+                            result = tool_call["writeToolCall"].get("result", {}).get("success", {})
+                            lines = result.get("linesCreated", 0)
+                            size = result.get("fileSize", 0)
+                            print(f"   ✅ Created {lines} lines ({size} bytes)")
+                        elif "readToolCall" in tool_call:
+                            result = tool_call["readToolCall"].get("result", {}).get("success", {})
+                            lines = result.get("totalLines", 0)
+                            print(f"   ✅ Read {lines} lines")
+
+                elif msg_type == "result":
+                    duration = data.get("duration_ms", 0)
+                    total_time = int(time.time() - start_time)
+                    print(f"\n\n🎯 Completed in {duration}ms ({total_time}s total)")
+                    print(f"📊 Stats: {tool_count} tools, {len(accumulated_text)} chars")
+
+        except Exception as e:
+            parse_exception = (e, traceback.format_exc())
+        finally:
+            if log_handle:
+                log_handle.close()
+
+        process.wait()
+
+        if parse_exception is not None:
+            _, error_traceback = parse_exception
+            return AgentResult(
+                success=False,
+                output_text=accumulated_text,
+                metadata={"tool_count": tool_count, "model": model_name},
+                error=f"Exception during stream parsing:\n{error_traceback}"
+            )
+
+        if process.returncode != 0:
+            stderr_output = ""
+            if process.stderr:
+                try:
+                    stderr_output = process.stderr.read()
+                    if isinstance(stderr_output, bytes):
+                        stderr_output = stderr_output.decode('utf-8', errors='replace')
+                except Exception:
+                    stderr_output = f"Failed to read stderr: {traceback.format_exc()}"
+            else:
+                stderr_output = "No stderr available"
+
+            if stderr_output:
+                print(f"\n❌ Cursor CLI stderr:\n{stderr_output}")
+
+            return AgentResult(
+                success=False,
+                output_text=accumulated_text,
+                metadata={"tool_count": tool_count, "model": model_name, "returncode": process.returncode},
+                error=f"Process failed with return code {process.returncode}\n\nStderr:\n{stderr_output}"
+            )
+
+        result_json = extract_json_result(accumulated_text)
+
+        return AgentResult(
+            success=True,
+            output_text=accumulated_text,
+            metadata={
+                "tool_count": tool_count,
+                "model": model_name,
+                "result_data": result_json
+            }
+        )
+
+
 # ---------------------------------------------------------------------------
 # Agent registry and factory
 # ---------------------------------------------------------------------------
@@ -620,6 +849,7 @@ class CodexAgentRunner(AgentRunner):
 _AGENT_REGISTRY: Dict[str, type] = {
     "claude": ClaudeAgentRunner,
     "codex": CodexAgentRunner,
+    "cursor": CursorAgentRunner,
 }
 
 

@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Optional
 
 import jbfoundry as jbf
+from jbfoundry.llm.litellm import RichResponse
+from jbfoundry.payloads import AttackPayload, JudgedOutput, infer_prompt_modalities, serialize_attack_prompt
 from jbfoundry.utils.logging import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,18 @@ try:
 except ImportError as e:
     MODERN_SYSTEM_AVAILABLE = False
     logger.warning(f"Modern attack system not available: {e}")
+
+
+def _redact_secrets(value):
+    """Mask non-empty *api_key fields so credentials never land in result files."""
+    if isinstance(value, dict):
+        return {
+            k: ("***REDACTED***" if isinstance(k, str) and k.endswith("api_key") and v else _redact_secrets(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_secrets(v) for v in value]
+    return value
 
 
 def create_argument_parser():
@@ -126,6 +140,9 @@ def apply_yaml_config(args):
             ("provider", "provider"),
             ("api_key", "api_key"),
             ("api_base", "api_base"),
+            ("supports_vision", "supports_vision"),
+            ("max_image_bytes", "max_image_bytes"),
+            ("request_timeout", "request_timeout"),
         ]:
             _set_arg_from_config(args, arg_key, victim.get(yaml_key))
 
@@ -191,6 +208,9 @@ def setup_model(args):
             provider=args.provider,
             api_key=args.api_key,
             api_base=args.api_base,
+            supports_vision=getattr(args, "supports_vision", None),
+            max_image_bytes=getattr(args, "max_image_bytes", 20 * 1024 * 1024),
+            request_timeout=getattr(args, "request_timeout", None),
         )
     except Exception as e:
         raise ValueError(f"Failed to set up model for provider {args.provider}: {e}")
@@ -241,8 +261,8 @@ def setup_evaluator(args):
             logger.warning(f"WMDP evaluator not available ({e}), falling back to generic evaluator")
     
     # Fall back to generic jailbreak evaluation for other datasets
-    eval_provider = getattr(args, 'eval_provider', 'openai')
-    eval_model = getattr(args, 'eval_model', 'gpt-4o')
+    eval_provider = getattr(args, 'eval_provider', 'local-glm-abliterated')
+    eval_model = getattr(args, 'eval_model', 'huihui-glm-5.3-flash')
     eval_api_key = getattr(args, 'eval_api_key', None)
     eval_api_base = getattr(args, 'eval_api_base', None)
 
@@ -294,6 +314,62 @@ def get_results_file_path(args, attack_meta):
     output_file = f"{args.output_dir}/results_{attack_name}.json"
     
     return output_file
+
+
+def validate_run_compatibility(llm, attack, dataset):
+    """Validate dataset requirements that are knowable before attack generation."""
+    dataset_modalities = set(getattr(dataset, "modalities", frozenset({"text"})))
+    required_data = set(
+        getattr(attack, "REQUIRED_DATASET_MODALITIES", frozenset({"text"}))
+    )
+    missing_data = required_data - dataset_modalities
+    if missing_data:
+        raise ValueError(
+            f"Attack '{attack.NAME}' requires dataset modalities not available here: "
+            + ", ".join(sorted(missing_data))
+        )
+
+    capabilities = llm.get_capabilities()
+    return {
+        "dataset_modalities": sorted(dataset_modalities),
+        "required_dataset_modalities": sorted(required_data),
+        "model_capabilities": capabilities.to_dict(),
+    }
+
+
+def validate_payload_compatibility(llm, prompt, defense_name=None):
+    """Validate the actual generated payload before making a victim-model call."""
+    modalities = infer_prompt_modalities(prompt)
+    if "image" in modalities and not isinstance(prompt, AttackPayload):
+        raise TypeError(
+            "Runner-based image attacks must return AttackPayload so image bytes "
+            "cannot be persisted in result files"
+        )
+
+    capabilities = llm.get_capabilities()
+    unsupported_inputs = set(modalities) - set(capabilities.input_modalities)
+    if unsupported_inputs:
+        raise ValueError(
+            "Victim model does not support generated payload modalities: "
+            + ", ".join(sorted(unsupported_inputs))
+            + ". Select a compatible vision model or set victim_model.supports_vision "
+            "for a compatible custom endpoint."
+        )
+
+    if defense_name:
+        from jbfoundry.defenses.registry import registry as defense_registry
+
+        defense_class = defense_registry.get_defense(defense_name)
+        unsupported_defense_inputs = set(modalities) - set(
+            defense_class.SUPPORTED_MODALITIES
+        )
+        if unsupported_defense_inputs:
+            raise ValueError(
+                f"Defense '{defense_name}' does not support prompt modalities: "
+                + ", ".join(sorted(unsupported_defense_inputs))
+            )
+
+    return modalities
 
 
 def load_existing_results(output_file, retry_invalid=True, retry_failed=False):
@@ -353,7 +429,7 @@ def initialize_results_file(args, attack_meta):
         if existing_data:
             # Update metadata with current timestamp but keep existing results
             existing_data["metadata"]["timestamp"] = timestamp
-            existing_data["metadata"]["args"] = vars(args)
+            existing_data["metadata"]["args"] = _redact_secrets(vars(args))
 
             with open(output_file, 'w') as f:
                 json.dump(existing_data, f, indent=2)
@@ -366,7 +442,7 @@ def initialize_results_file(args, attack_meta):
             logger.warning("--retry-failed and --retry-invalid have no effect when --restart is used")                                                    
 
     # Create new file (or overwrite if resume is disabled)
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     
     # Initialize file with metadata
     initial_data = {
@@ -382,7 +458,7 @@ def initialize_results_file(args, attack_meta):
                 "modular_system_available": MODERN_SYSTEM_AVAILABLE,
                 "attack_system_used": attack_meta.get("system", "modern")
             },
-            "args": vars(args)
+            "args": _redact_secrets(vars(args))
         },
         "results": []
     }
@@ -459,6 +535,20 @@ def _process_single_example_inner(i, example, llm, attack, evaluator, attack_met
         # Create cost tracker for this attempt
         cost_tracker = CostTracker()
 
+        safe_attack_name = "".join(
+            character if character.isalnum() or character in {"-", "_"} else "_"
+            for character in attack_meta["name"]
+        )
+        artifact_dir = (
+            Path(output_file).resolve().parent
+            / "artifacts"
+            / safe_attack_name
+            / f"example_{i:05d}"
+            / f"attempt_{attempt_index:02d}"
+        )
+        actual_modalities = None
+        judged_source = "victim"
+
         try:
             jailbroken_prompt = attack.generate_attack(
                 prompt=example["goal"],
@@ -470,6 +560,8 @@ def _process_single_example_inner(i, example, llm, attack, evaluator, attack_met
                 cost_tracker=cost_tracker,
                 previous_attempt_failed=previous_attempt_failed,
                 example_id=i,
+                example=example,
+                artifact_dir=artifact_dir,
             )
         except Exception as e:
             logger.error(f"Error generating attack for example {i} (attempt {attempt_index}): {e}")
@@ -477,12 +569,24 @@ def _process_single_example_inner(i, example, llm, attack, evaluator, attack_met
             response = None
             success = None
         else:
-            try:
-                response = llm.query(
+            if isinstance(jailbroken_prompt, JudgedOutput):
+                actual_modalities = jailbroken_prompt.modalities
+                judged_source = jailbroken_prompt.source
+            else:
+                actual_modalities = validate_payload_compatibility(
+                    llm,
                     jailbroken_prompt,
-                    defense=args.defense,
-                    cost_tracker=cost_tracker
+                    defense_name=getattr(args, "defense", None),
                 )
+            try:
+                if isinstance(jailbroken_prompt, JudgedOutput):
+                    response = RichResponse(jailbroken_prompt.response)
+                else:
+                    response = llm.query(
+                        jailbroken_prompt,
+                        defense=args.defense,
+                        cost_tracker=cost_tracker
+                    )
             except Exception as e:
                 logger.error(f"Error querying model for example {i} (attempt {attempt_index}): {e}")
                 response = None
@@ -491,6 +595,11 @@ def _process_single_example_inner(i, example, llm, attack, evaluator, attack_met
                 eval_input = dict(example)
                 eval_input["question"] = example["goal"]
                 eval_input["answer"] = response
+                eval_input["attack_prompt"] = serialize_attack_prompt(
+                    jailbroken_prompt,
+                    relative_to=Path(output_file).resolve().parent,
+                )
+                eval_input["modalities"] = sorted(actual_modalities)
 
                 try:
                     success = evaluator(eval_input)
@@ -502,10 +611,16 @@ def _process_single_example_inner(i, example, llm, attack, evaluator, attack_met
         if cost_tracker:
             cost_tracker.aggregate_into(aggregated_cost)
 
+        serialized_prompt = serialize_attack_prompt(
+            jailbroken_prompt,
+            relative_to=Path(output_file).resolve().parent,
+        )
         attempts.append({
             "attempt_index": attempt_index,
-            "attack_prompt": jailbroken_prompt,
+            "modalities": sorted(actual_modalities) if actual_modalities else None,
+            "attack_prompt": serialized_prompt,
             "model_response": response,
+            "judged_source": judged_source,
             "jailbroken": success,
             "usage": response.get_usage() if response else None,
             "reasoning_content": response.get_reasoning_content() if response else None,
@@ -537,7 +652,9 @@ def _process_single_example_inner(i, example, llm, attack, evaluator, attack_met
         "example_id": i,
         "goal": example["goal"],
         "attack_prompt": last_attempt.get("attack_prompt"),
+        "modalities": last_attempt.get("modalities"),
         "model_response": last_attempt.get("model_response"),
+        "judged_source": last_attempt.get("judged_source"),
         "jailbroken": overall_success,
         "usage": last_attempt.get("usage"),
         "reasoning_content": last_attempt.get("reasoning_content"),
@@ -691,6 +808,13 @@ def run_single_attack(args, llm, evaluator, evaluation_info, dataset, attack_nam
     """Run a single attack and return results."""
     # Set up attack
     attack, attack_meta = setup_attack(args, attack_name)
+
+    compatibility = validate_run_compatibility(
+        llm,
+        attack,
+        dataset,
+    )
+    attack_meta["compatibility"] = compatibility
 
     print(f"\nRunning {attack_meta['name']} attack using {attack_meta['system']} system...")
     logger.info(f"Attack paper: {attack_meta.get('paper', 'unknown')}")

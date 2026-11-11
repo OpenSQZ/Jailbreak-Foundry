@@ -1,0 +1,51 @@
+attack_name: haca_gen
+dataset: assets/harmful_behaviors_custom_50.csv
+samples: 1
+all_samples: false
+restart: true
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: iiis/qwen3-vl-30b-a3b-instruct-fp8-sqz1
+  provider: iiis
+  api_key: null
+  api_base: null
+  supports_vision: true
+  request_timeout: 600
+
+eval_model:
+  model: huihui-glm-5.3-flash
+  provider: local-glm-abliterated
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  selection_mode: planner
+  planner_model:
+    model: iiis/deepseek-v4-flash-0731-sqz1
+    provider: iiis
+    api_key: null
+    api_base: null
+  text_executor_model:
+    model: iiis/deepseek-v4-flash-0731-sqz1
+    provider: iiis
+    api_key: null
+    api_base: null
+  image_prompt_model:
+    model: iiis/deepseek-v4-flash-0731-sqz1
+    provider: iiis
+    api_key: null
+    api_base: null
+  image_generator:
+    model: black-forest-labs/FLUX.1-dev
+    provider: local_diffusers
+    api_key: null
+    api_base: null
+  image_generation_mode: offline_audit
+  max_queries: 10
+  diversify_on_failure: true
+  haca_seed: 0
+  helper_temperature: 0.7
+  helper_max_tokens: 2048

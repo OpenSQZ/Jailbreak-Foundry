@@ -1,0 +1,65 @@
+attack_name: "furina_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: true
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "iiis/qwen3-vl-30b-a3b-instruct-fp8-sqz1"
+  provider: "iiis"
+  api_key: null
+  api_base: null
+  supports_vision: true
+  request_timeout: 600
+
+eval_model:
+  model: "huihui-glm-5.3-flash"
+  provider: "local-glm-abliterated"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  mode: "typo"
+  judge_target: "synthesis"
+  max_probes: 5
+  max_retries: 3
+  enable_skip_fallback: true
+  helper_temperature: 0.3
+  helper_max_tokens: 4096
+  typography_temperature: 0.4
+  typography_max_tokens: 2048
+  typography_reasoning_effort: "low"
+  sd_prompt_only: true
+  task_planner_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  probe_reasoning_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  probe_optimizer_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  probe_generator_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  scene_generator_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  synthesizer_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null

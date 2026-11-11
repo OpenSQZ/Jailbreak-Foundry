@@ -44,10 +44,10 @@ from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 from jbfoundry.llm.litellm import LLMLiteLLM
 
 
-class AirGen(ModernBaseAttack):
+class AirGenImproved(ModernBaseAttack):
     """Attack via Implicit Reference (AIR) implementation."""
     
-    NAME = "air_gen"
+    NAME = "air_gen_improved"
     PAPER = "Attack via Implicit Reference (Xu et al., 2024)"
     
     PARAMETERS = {
@@ -61,17 +61,10 @@ class AirGen(ModernBaseAttack):
         ),
         "rewrite_model": AttackParameter(
             name="rewrite_model",
-            param_type=str,
-            default="gpt-4o-2024-05-13",
+            param_type=dict,
+            default={'model': 'gpt-4o-2024-05-13', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="Model used to generate the AIR outline (paper uses gpt-4o-2024-05-13)",
             cli_arg="--rewrite_model"
-        ),
-        "rewrite_provider": AttackParameter(
-            name="rewrite_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for rewrite model",
-            cli_arg="--rewrite_provider"
         ),
         "use_target_for_rewrite": AttackParameter(
             name="use_target_for_rewrite",
@@ -435,11 +428,12 @@ Paragraph 5's title should briefly summarize the content of your first sentence(
             return self._get_target_llm()
         
         rewrite_model = self.get_parameter_value("rewrite_model")
-        rewrite_provider = self.get_parameter_value("rewrite_provider")
         
         return LLMLiteLLM.from_config(
-            model_name=rewrite_model,
-            provider=rewrite_provider
+            model_name=rewrite_model["model"],
+            provider=rewrite_model["provider"],
+            api_key=rewrite_model.get("api_key"),
+            api_base=rewrite_model.get("api_base")
         )
     
     def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> List[Dict[str, str]]:

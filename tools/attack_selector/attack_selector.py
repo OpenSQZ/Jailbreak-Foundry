@@ -14,30 +14,32 @@ from pathlib import Path
 from selector_registry import get_selector_class, add_selector_cli_args, collect_selector_opts
 
 # Model mapping dictionary: user_model_name -> {model, provider, api_key?, api_base?}
+# NOTE: provider is the IIIS LiteLLM router; model names must be real router
+# channels (prefixed). Bare names like "gpt-4o" do not exist on the router.
 MODEL_MAPPING = {
     "claude-3.7-sonnet": {
-        "model": "claude-3-7-sonnet-20250219",
-        "provider": "wenwen"
+        "model": "aws/claude-sonnet-4-6",
+        "provider": "iiis"
     },
     "claude-3.5-sonnet": {
-        "model": "claude-3-5-sonnet-20241022", 
-        "provider": "wenwen"
+        "model": "aws/claude-sonnet-4-6",
+        "provider": "iiis"
     },
     "gpt-4": {
-        "model": "gpt-4-0613",
-        "provider": "wenwen"
+        "model": "jwg/gpt-4o",
+        "provider": "iiis"
     },
     "gpt-4o": {
-        "model": "gpt-4o",
-        "provider": "wenwen"
+        "model": "jwg/gpt-4o",
+        "provider": "iiis"
     },
     # "gpt-oss-120b": {
     #     "model": "gpt-oss-120b",
     #     "provider": "infini",
     # },
     "gpt-3.5-turbo": {
-        "model": "gpt-3.5-turbo",
-        "provider": "wenwen"
+        "model": "jwg/gpt-4o",
+        "provider": "iiis"
     },
     "llama-3-8b-instruct": {
         "model": "llama-3-8b-instruct",
@@ -46,7 +48,7 @@ MODEL_MAPPING = {
     },
     "llama-2-7b-chat": {
         "model": "llama-2-7b-chat",
-        "provider": "openai", 
+        "provider": "openai",
         "api_base": "http://10.210.22.10:30254/v1",
     },
     # "deepseek-v1-0528-qwen3-8b": {
@@ -59,8 +61,8 @@ MODEL_MAPPING = {
         # "provider": "infini",
     },
     "gpt-5.1": {
-        "model": "gpt-5.1",
-        "provider": "wenwen",
+        "model": "ora/gpt-5.6",
+        "provider": "iiis",
     },
 }
 
@@ -73,7 +75,7 @@ def get_model_info(user_model_name: str) -> Dict[str, str]:
         print(f"⚠️  Unknown model '{user_model_name}', using default mapping")
         return {
             "model": user_model_name,
-            "provider": "wenwen"
+            "provider": "iiis"
         }
 
 def load_asr_data(asr_file_path: str) -> Tuple[List[str], List[dict], List[List[float]]]:

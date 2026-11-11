@@ -56,7 +56,7 @@ from jbfoundry.attacks.base import ModernBaseAttack, AttackParameter
 from jbfoundry.llm.litellm import LLMLiteLLM
 
 
-class PastTenseGen(ModernBaseAttack):
+class PastTenseGenImproved(ModernBaseAttack):
     """
     Past Tense Attack - Reformulates harmful requests into past tense.
 
@@ -72,7 +72,7 @@ class PastTenseGen(ModernBaseAttack):
     Those are framework-level settings. See module docstring for details on gaps.
     """
 
-    NAME = "past_tense_gen"
+    NAME = "past_tense_gen_improved"
     PAPER = "2407.11969"
     
     # Prompt templates from the reference implementation
@@ -117,17 +117,10 @@ However, do not be constrained by these examples. Feel free to use your creativi
     PARAMETERS = {
         "helper_model": AttackParameter(
             name="helper_model",
-            param_type=str,
-            default="gpt-3.5-turbo",
+            param_type=dict,
+            default={'model': 'gpt-3.5-turbo', 'provider': 'openai', 'api_key': None, 'api_base': None},
             description="The LLM used for reformulation",
             cli_arg="--helper-model"
-        ),
-        "helper_provider": AttackParameter(
-            name="helper_provider",
-            param_type=str,
-            default="openai",
-            description="Provider for the helper model",
-            cli_arg="--helper-provider"
         ),
         "temperature": AttackParameter(
             name="temperature",
@@ -159,15 +152,16 @@ However, do not be constrained by these examples. Feel free to use your creativi
         
         # Get parameter values
         self.helper_model = self.get_parameter_value("helper_model")
-        self.helper_provider = self.get_parameter_value("helper_provider")
         self.temperature = self.get_parameter_value("temperature")
         self.mode = self.get_parameter_value("mode")
         self.max_tokens = self.get_parameter_value("max_tokens")
         
         # Initialize helper LLM for reformulation
         self.helper_llm = LLMLiteLLM.from_config(
-            model_name=self.helper_model,
-            provider=self.helper_provider,
+            model_name=self.helper_model["model"],
+            provider=self.helper_model["provider"],
+            api_key=self.helper_model.get("api_key"),
+            api_base=self.helper_model.get("api_base"),
             temperature=self.temperature,
             max_tokens=self.max_tokens
         )

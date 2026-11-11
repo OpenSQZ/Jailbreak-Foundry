@@ -23,7 +23,7 @@ from typing import List, Optional, Tuple
 import requests
 
 DEFAULT_BASE_URL = "https://router.ai.iiis.co:9443/v1"
-KNOWN_PREFIXES = ["bh", "aws", "hh", "iiis", "infi", "wj"]
+KNOWN_PREFIXES = ["bh", "aws", "hh", "iiis", "infi", "wj", "ora"]
 
 log = logging.getLogger(__name__)
 

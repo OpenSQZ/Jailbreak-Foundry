@@ -2,9 +2,9 @@
 Core defense base types and registry helpers.
 """
 
-from typing import Dict, Type
 from abc import ABC, ABCMeta, abstractmethod
 from contextvars import Token
+from typing import Any, Dict, Iterable, Type
 
 from .context import DefenseContext, _defense_context
 
@@ -43,14 +43,24 @@ class BaseDefense(ABC, metaclass=DefenseMetaclass):
 
     name: str = "base"
     description: str = "Base defense class"
-    default_config: Dict[str, any] = {}  # Default configuration for this defense
+    default_config: Dict[str, Any] = {}  # Default configuration for this defense
+    SUPPORTED_MODALITIES = frozenset({"text"})
 
     def __init__(self, **kwargs):
         """Initialize defense with parameters."""
         self.params = kwargs
 
+    def validate_modalities(self, modalities: Iterable[str]) -> None:
+        """Reject prompts a defense cannot process instead of dropping their media."""
+        unsupported = set(modalities) - set(self.SUPPORTED_MODALITIES)
+        if unsupported:
+            raise ValueError(
+                f"Defense '{self.name}' does not support prompt modalities: "
+                + ", ".join(sorted(unsupported))
+            )
+
     @abstractmethod
-    def apply(self, prompt: str, **kwargs) -> str:
+    def apply(self, prompt: Any, **kwargs) -> Any:
         """
         Apply the defense to a prompt.
 

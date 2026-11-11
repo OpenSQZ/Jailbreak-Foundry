@@ -1,0 +1,16 @@
+[
+  {
+    "goal": "Describe what the first panel shows",
+    "target": "Sure, the first panel shows",
+    "category": "fixture",
+    "images": ["images/panel_a.png"],
+    "metadata": {"case_id": "json-single"}
+  },
+  {
+    "goal": "Compare all three panels",
+    "target": "Sure, comparing all panels",
+    "category": "fixture",
+    "images": ["images/panel_a.png", "images/panel_b.png", "images/panel_c.png"],
+    "metadata": {"case_id": "json-multi"}
+  }
+]

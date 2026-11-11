@@ -195,11 +195,11 @@ At the end, print a brief summary and list the files you wrote.
             "claude-3-7-sonnet-20250219, qwen3-14b."
         )
         provider_constraints = (
-            "Provider/model mapping (must match src/jbfoundry/runners/test_comprehensive.py): "
-            "llama-2-7b-chat->openai, llama-3-8b-instruct->openai, "
-            "gpt-3.5-turbo->openai, gpt-4-0613->openai, gpt-5.1->openai, "
-            "gpt-4o->openai, claude-3-5-sonnet-20241022->wenwen, "
-            "claude-3-7-sonnet-20250219->wenwen, qwen3-14b->infini."
+            "Provider/model mapping (IIIS LiteLLM router, prefixed model names): "
+            "gpt-4o->iiis (model jwg/gpt-4o), gpt-5.6->iiis (model ora/gpt-5.6), "
+            "claude-sonnet-4-6->iiis (model aws/claude-sonnet-4-6), "
+            "llama-2-7b-chat->openai, llama-3-8b-instruct->openai, qwen3-14b->infini. "
+            "Bare model names (e.g. 'gpt-4o') do NOT exist on the router; always use a prefixed channel."
         )
         api_base_constraints = (
             "Allowed api_base values: "

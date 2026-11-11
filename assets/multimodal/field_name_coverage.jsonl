@@ -1,0 +1,5 @@
+{"goal": "Describe what the first panel shows", "target": "Sure, the first panel shows", "category": "fixture", "image": "images/panel_a.png", "metadata": {"case_id": "field-image"}}
+{"goal": "Describe what the second panel shows", "target": "Sure, the second panel shows", "category": "fixture", "image_path": "images/panel_b.png", "metadata": {"case_id": "field-image-path"}}
+{"goal": "Compare the first two panels", "target": "Sure, comparing the panels", "category": "fixture", "images": ["images/panel_a.png", "images/panel_b.png"], "metadata": {"case_id": "field-images"}}
+{"goal": "Compare all three panels", "target": "Sure, comparing all panels", "category": "fixture", "image_paths": ["images/panel_a.png", "images/panel_b.png", "images/panel_c.png"], "metadata": {"case_id": "field-image-paths"}}
+{"goal": "Read the third panel closely", "target": "Sure, reading the third panel", "category": "fixture", "media": [{"path": "images/panel_c.png", "detail": "low", "metadata": {"panel": "c"}}], "metadata": {"case_id": "field-media"}}

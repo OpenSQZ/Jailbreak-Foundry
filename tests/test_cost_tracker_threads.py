@@ -60,9 +60,7 @@ def test_cost_tracker_with_threads():
         for future in as_completed(futures):
             result = future.result()
             print(f"  {result}")
-            if "No tracker" in result:
-                print("  ❌ FAILED: Context was not propagated!")
-                return False
+            assert "No tracker" not in result, f"Context was not propagated: {result}"
 
     # Check final costs
     print(f"\nFinal tracker: {tracker}")
@@ -75,16 +73,19 @@ def test_cost_tracker_with_threads():
     print(f"\nTotal: {summary['totals']['query_count']} calls, {summary['totals']['total_tokens']} tokens")
 
     # Verify all calls were tracked
-    if summary['totals']['query_count'] == 20:
-        print("\n✅ All 20 calls were tracked successfully!")
-        return True
-    else:
-        print(f"\n❌ Only {summary['totals']['query_count']} out of 20 calls were tracked!")
-        return False
+    assert summary['totals']['query_count'] == 20, (
+        f"Only {summary['totals']['query_count']} out of 20 calls were tracked!"
+    )
+    print("\n✅ All 20 calls were tracked successfully!")
 
 if __name__ == "__main__":
     print("=== Testing CostTracker with Monkey-Patched ThreadPoolExecutor ===\n")
-    success = test_cost_tracker_with_threads()
+    try:
+        test_cost_tracker_with_threads()
+        success = True
+    except AssertionError as e:
+        print(f"\n❌ {e}")
+        success = False
 
     if success:
         print("\n✅ Cost tracking works correctly with multi-threading!")

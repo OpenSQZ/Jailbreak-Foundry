@@ -435,7 +435,7 @@ class ComprehensiveAttackTester:
         """Run comprehensive testing with optional filters"""
         # Parse model_filter - supports two formats:
         # 1. Name from PROVIDERS list: "gpt-4o"
-        # 2. Dynamic format: "provider/model" (e.g., "wenwen/gpt-5.4")
+        # 2. Dynamic format: "provider/model" (e.g., "iiis/jwg/gpt-4o")
         if model_filter:
             if "/" in model_filter:
                 # Dynamic format: provider/model
@@ -614,7 +614,7 @@ def parse_args():
     parser.add_argument("--attack_name", required=True, help="Name of the attack to test")
     parser.add_argument("--defense", help="Defense name to test (optional)")
     parser.add_argument("--dataset", help="Dataset: name from DATASETS list, or any CSV file path")
-    parser.add_argument("--model", help="Model: name from PROVIDERS list, or 'provider/model' format (e.g., 'wenwen/gpt-5.4')")
+    parser.add_argument("--model", help="Model: name from PROVIDERS list, or 'provider/model' format (e.g., 'iiis/jwg/gpt-4o')")
     parser.add_argument("--status", action="store_true", help="Only print progress table and exit")
     parser.add_argument("--fix-progress", action="store_true", help="Fix progress JSON from existing results and exit")
     parser.add_argument("--restart", action="store_true", default=False,

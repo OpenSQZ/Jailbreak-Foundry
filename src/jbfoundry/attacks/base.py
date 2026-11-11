@@ -1,16 +1,17 @@
 """Enhanced base classes for modular attack system."""
 
-from abc import ABC, ABCMeta, abstractmethod
-from typing import Dict, Any, List, Optional, Union, Callable
 import argparse
 import logging
+from abc import ABC, ABCMeta, abstractmethod
 from contextvars import Token
+from typing import Any, Callable, Dict, List, Optional, Union
 
+from ..payloads import AttackPayload, JudgedOutput, SUPPORTED_MODALITIES
 from .context import AttackContext, _attack_context
 
 logger = logging.getLogger(__name__)
 
-AttackPrompt = Union[str, List[Dict[str, str]]]
+AttackPrompt = Union[str, List[Dict[str, Any]], AttackPayload, JudgedOutput]
 
 
 class AttackMetaclass(ABCMeta):
@@ -31,7 +32,9 @@ class AttackMetaclass(ABCMeta):
             original_generate_attack = class_dict['generate_attack']
 
             # Create a context-wrapped version
-            def wrapped_generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
+            def wrapped_generate_attack(
+                self, prompt: str, goal: str, target: str, **kwargs
+            ) -> AttackPrompt:
                 """Context-wrapped generate_attack method."""
                 # Create isolated context for this attack run
                 context = AttackContext(**kwargs)
@@ -105,6 +108,7 @@ class ModernBaseAttack(ABC, metaclass=AttackMetaclass):
     NAME: str = ""
     PAPER: str = ""
     PARAMETERS: Dict[str, AttackParameter] = {}
+    REQUIRED_DATASET_MODALITIES = frozenset({"text"})
     
     def __init__(self, args=None, **kwargs):
         """Initialize attack with parameters."""
@@ -118,6 +122,12 @@ class ModernBaseAttack(ABC, metaclass=AttackMetaclass):
         for field in required_fields:
             if not getattr(self, field):
                 raise ValueError(f"Attack {self.__class__.__name__} missing required field: {field}")
+        unsupported = set(self.REQUIRED_DATASET_MODALITIES) - set(SUPPORTED_MODALITIES)
+        if unsupported:
+            raise ValueError(
+                "Only text and image modalities are supported in this release; got: "
+                + ", ".join(sorted(unsupported))
+            )
     
     @abstractmethod
     def generate_attack(self, prompt: str, goal: str, target: str, **kwargs) -> AttackPrompt:
@@ -134,7 +144,8 @@ class ModernBaseAttack(ABC, metaclass=AttackMetaclass):
             **kwargs: Additional parameters
 
         Returns:
-            Either a plain prompt string or a preformatted chat message list.
+            Either a plain prompt string, a preformatted chat message list, or
+            a provider-neutral ``AttackPayload`` containing text/image parts.
             Return a message list when the source attack relies on system roles
             or multi-turn chat state; the runner passes either form directly to
             ``LLMLiteLLM.query``.
@@ -168,6 +179,7 @@ class ModernBaseAttack(ABC, metaclass=AttackMetaclass):
         return {
             "name": cls.NAME,
             "paper": cls.PAPER,
+            "required_dataset_modalities": sorted(cls.REQUIRED_DATASET_MODALITIES),
             "parameters": {name: {
                 "type": param.type.__name__,
                 "default": param.default,

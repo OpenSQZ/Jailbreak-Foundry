@@ -8,18 +8,51 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
+import pymupdf  # local CPU text-layer extraction; the router hangs on image-dense PDFs
+
 from openai import OpenAI
 from PyPDF2 import PdfReader, PdfWriter
 
-# Default model ID
-# DEFAULT_MODEL = "bh/gemini-3-flash-preview"
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+# Default model ID (env-overridable so a down/overloaded channel can be
+# swapped without editing the workflow that invokes this script).
+DEFAULT_MODEL = os.environ.get("PREPROCESS_MODEL", "ora/gpt-5.6")
 
 # LiteLLM proxy settings
-# DEFAULT_BASE_URL = "https://router.ai.iiis.co:9443/v1"
-DEFAULT_BASE_URL = "https://api.wenwen-ai.com/v1"
+DEFAULT_BASE_URL = "https://router.ai.iiis.co:9443/v1"
 
-DEFAULT_API_KEY_ENV = "WENWEN_API_KEY"
+DEFAULT_API_KEY_ENV = "IIIS_API_KEY"
+
+
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader so IIIS_API_KEY is picked up automatically."""
+    if not path.exists():
+        return
+    try:
+        for raw in path.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+# Load .env from repo root (parent of agents/) at import time.
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_load_dotenv(_REPO_ROOT / ".env")
+
+# Capability envelope: single source of truth for admissible payload
+# modalities. The preprocessor enforces it in Python, not just in prompt text.
+import sys as _sys
+_sys.path.insert(0, str(_REPO_ROOT))
+try:
+    from agents.utils.capability import payload_ok as _payload_ok
+except Exception:  # pragma: no cover
+    _payload_ok = None
 
 
 # ---------------------------------------------------------------------------
@@ -32,8 +65,23 @@ You are an expert classifier for jailbreak attack research papers.
 Based ONLY on the title and abstract below, determine whether this paper proposes a NEW jailbreak attack method that is:
 1. A jailbreak attack on LLMs (not defense, not survey, not benchmark)
 2. Black-box (only needs API access, no gradients/weights/logits)
-3. Text-only (not vision, not audio, not multimodal)
+3. Uses only text and/or raster-image inputs to the remote victim model (vision-language and multimodal image attacks are allowed; audio and video attacks are not supported)
 4. Practical to run on CPU (no GPU/training required from reading the abstract)
+
+Do NOT reject a paper merely because the remote victim model accepts images or
+because the paper calls the attack vision-language or multimodal. If the
+abstract does not establish whether local GPU, training, or model inference is
+required, leave that question to the deep triage instead of rejecting it here.
+
+Also extract the PAYLOAD MODALITIES: what does the attack actually feed into
+the victim model? Return a JSON array of one or more of:
+"text", "image", "video", "audio", "3d", "other".
+- Static raster images (typographic prompts, adversarial images, screenshots,
+  charts, figures) -> include "image".
+- A sequence of video frames or temporally-ordered frames/subtitles -> include
+  "video" (NOT "image").
+- Pure text prompts/templates, even if the victim is a VLM -> ["text"] only.
+- Cannot tell from abstract -> [] (empty array).
 
 Title: {title}
 
@@ -42,6 +90,8 @@ Abstract: {abstract}
 Respond with ONLY a JSON object:
 {{
   "eligible": true or false,
+  "payload_modalities": ["text"|"image"|"video"|"audio"|"3d"|"other", ...],
+  "surrogate_required": true|false|null,
   "reason": "one sentence explanation"
 }}
 """
@@ -49,7 +99,7 @@ Respond with ONLY a JSON object:
 DEEP_TRIAGE_PROMPT = """\
 You are an expert classifier for jailbreak attack research papers.
 
-You are given the first 8 pages of a paper. Determine whether this paper's proposed attack method is PRACTICALLY CPU-runnable in a black-box text-only setting.
+You are given the first 3 pages of a paper. Determine whether this paper's proposed attack method is PRACTICALLY CPU-runnable in a black-box setting. The supported victim inputs are text and raster images, and the victim output must be text.
 
 Specifically, check for these DISQUALIFYING signals:
 - Uses transformers library to load or run a local model (e.g., for perplexity filtering, token scoring)
@@ -57,11 +107,16 @@ Specifically, check for these DISQUALIFYING signals:
 - Needs to calculate perplexity, token probabilities, or embeddings locally
 - Requires fine-tuning or training any model
 - Needs gradient computation or backpropagation
-- Requires vision/audio/multimodal inputs
+- Requires audio, video, or another unsupported input modality
 - Only works with white-box/gray-box access (needs logits, hidden states, model internals)
 - Requires running inference on a local LLM (not via API)
+- Needs a local white-box surrogate model to generate adversarial examples that are then transferred to the (black-box) victim
 
-Note: Using an external LLM API (like OpenAI, Claude, etc.) for generation/scoring IS acceptable and counts as CPU-runnable.
+Notes:
+- Sending text and/or raster images to a remote vision-language victim API IS acceptable.
+- Creating typographic or otherwise programmatic images locally with CPU-safe libraries IS acceptable.
+- Using an external model API (like OpenAI, Claude, etc.) for generation/scoring IS acceptable and counts as CPU-runnable.
+- Do NOT treat vision-language or multimodal terminology alone as disqualifying. Reject only when the actual method requires unsupported modalities or non-CPU local computation.
 
 Respond with ONLY a JSON object:
 {{
@@ -98,30 +153,36 @@ class LLMClient:
         return response.choices[0].message.content
 
     def chat_with_pdf(self, pdf_bytes: bytes, text_prompt: str) -> str:
-        """Send chat completion with inline PDF data."""
+        """Send a PDF via the Responses API (input_file) and return text.
+
+        The IIIS router does not forward inline PDF `file` parts in chat
+        completions, but it does accept the Responses API `input_file` part,
+        so OCR and deep triage go through /v1/responses here.
+        """
         chunk_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
-        response = self.client.chat.completions.create(
+        response = self.client.responses.create(
             model=self.model,
-            messages=[
+            input=[
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "file",
-                            "file": {
-                                "filename": "paper.pdf",
-                                "file_data": f"data:application/pdf;base64,{chunk_base64}",
-                            },
+                            "type": "input_file",
+                            "filename": "paper.pdf",
+                            "file_data": f"data:application/pdf;base64,{chunk_base64}",
                         },
-                        {
-                            "type": "text",
-                            "text": text_prompt,
-                        },
+                        {"type": "input_text", "text": text_prompt},
                     ],
                 }
             ],
         )
-        return response.choices[0].message.content
+        parts = []
+        for item in getattr(response, "output", []) or []:
+            if getattr(item, "type", None) == "message":
+                for c in getattr(item, "content", []) or []:
+                    if getattr(c, "type", None) == "output_text":
+                        parts.append(getattr(c, "text", ""))
+        return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +327,18 @@ def check_abstract_eligibility(client: LLMClient, arxiv_id: str) -> dict:
     response_text = client.chat([{"role": "user", "content": prompt}])
     result = _parse_json_response(response_text)
 
-    print(f"  Result: eligible={result.get('eligible')} reason={result.get('reason')}")
+    # Check runtime support without applying the image-only paper-search policy.
+    mods = result.get("payload_modalities") or []
+    if _payload_ok is not None:
+        ok, reason = _payload_ok(mods, require_image=False)
+        if not ok:
+            print(f"  Result: eligible=False (payload check: {reason}) "
+                  f"payload={mods} llm_reason={result.get('reason')}")
+            raise EligibilityError(
+                f"Paper {arxiv_id} failed payload triage: {reason} (payload={mods})"
+            )
+
+    print(f"  Result: eligible={result.get('eligible')} payload={mods} reason={result.get('reason')}")
 
     if not result.get("eligible"):
         raise EligibilityError(
@@ -278,7 +350,7 @@ def check_abstract_eligibility(client: LLMClient, arxiv_id: str) -> dict:
 
 def check_deep_eligibility(client: LLMClient, pdf_path: Path) -> dict:
     """
-    Step 2: Send first 8 pages of PDF to verify CPU-runnability.
+    Step 2: Send first 3 pages of PDF to verify CPU-runnability.
 
     Returns:
         dict with 'eligible' (bool), 'reason' (str), 'disqualifying_signals' (list)
@@ -287,30 +359,55 @@ def check_deep_eligibility(client: LLMClient, pdf_path: Path) -> dict:
         EligibilityError: If paper is not eligible
     """
     print(f"\n{'='*60}")
-    print("STEP 2: Deep eligibility check (first 8 pages)")
+    print("STEP 2: Deep eligibility check (first 3 pages)")
     print(f"{'='*60}")
 
-    # Extract first 8 pages
-    with open(pdf_path, 'rb') as f:
-        pdf_content = f.read()
+    # Send the text layer, not the PDF: the router silently drops the Responses
+    # API input_file part on some channels, and the model then triages an empty
+    # document and rejects every paper.
+    doc = pymupdf.open(str(pdf_path))
+    try:
+        total_pages = doc.page_count
+        pages_to_check = min(3, total_pages)
+        parts = []
+        for i in range(pages_to_check):
+            text = (doc[i].get_text("text") or "").strip()
+            if text:
+                parts.append(f"<!-- page {i + 1} -->\n\n{text}")
+    finally:
+        doc.close()
+    excerpt = "\n\n".join(parts)
 
-    reader = PdfReader(BytesIO(pdf_content))
-    total_pages = len(reader.pages)
-    pages_to_check = min(8, total_pages)
-
-    writer = PdfWriter()
-    for i in range(pages_to_check):
-        writer.add_page(reader.pages[i])
-
-    pdf_output = BytesIO()
-    writer.write(pdf_output)
-    chunk_bytes = pdf_output.getvalue()
-
-    chunk_base64_mb = len(base64.b64encode(chunk_bytes)) / (1024 * 1024)
-    print(f"  Sending {pages_to_check}/{total_pages} pages ({chunk_base64_mb:.1f} MB base64)")
     print(f"  Querying {client.model} for deep triage...")
 
-    response_text = client.chat_with_pdf(chunk_bytes, DEEP_TRIAGE_PROMPT)
+    if excerpt:
+        print(f"  Sending {pages_to_check}/{total_pages} pages as text ({len(excerpt)} chars)")
+        response_text = client.chat([
+            {"role": "user", "content": f"{DEEP_TRIAGE_PROMPT}\n\n---\n\n{excerpt}"}
+        ])
+    else:
+        # Image-only pages (scanned paper): inline PDF is the only option left.
+        with open(pdf_path, 'rb') as f:
+            reader = PdfReader(BytesIO(f.read()))
+        writer = PdfWriter()
+        for i in range(pages_to_check):
+            writer.add_page(reader.pages[i])
+        pdf_output = BytesIO()
+        writer.write(pdf_output)
+        chunk_bytes = pdf_output.getvalue()
+        chunk_base64_mb = len(base64.b64encode(chunk_bytes)) / (1024 * 1024)
+        print(f"  No text layer in first {pages_to_check} pages; "
+              f"falling back to inline PDF ({chunk_base64_mb:.1f} MB base64)")
+        response_text = client.chat_with_pdf(chunk_bytes, DEEP_TRIAGE_PROMPT)
+
+    if not (response_text or "").strip():
+        # An empty reply means the document never reached the model. Failing
+        # loudly beats recording it as an eligibility rejection.
+        raise RuntimeError(
+            f"Deep triage got an empty reply from {client.model}; the document "
+            f"likely never reached the model. Not treating this as a rejection."
+        )
+
     result = _parse_json_response(response_text)
 
     signals = result.get("disqualifying_signals", [])
@@ -328,204 +425,42 @@ def check_deep_eligibility(client: LLMClient, pdf_path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# PDF processing (OCR)
+# PDF processing (local text-layer extraction)
 # ---------------------------------------------------------------------------
 
-class PDFProcessor:
-    """Handles PDF analysis and chunking operations."""
+def run_ocr(pdf_path: Path) -> str:
+    """Step 3: Extract the paper text layer locally with PyMuPDF.
 
-    MAX_BASE64_SIZE_MB = 5
-    MAX_PAGES_PER_CHUNK = 10
-
-    def analyze_pdf(self, pdf_path: Path):
-        """Analyze PDF to determine if chunking is needed."""
-        try:
-            with open(pdf_path, 'rb') as f:
-                pdf_content = f.read()
-
-            reader = PdfReader(BytesIO(pdf_content))
-            total_pages = len(reader.pages)
-
-            full_base64 = base64.b64encode(pdf_content).decode('utf-8')
-            base64_size_mb = len(full_base64) / (1024 * 1024)
-
-            print(f"PDF Analysis:")
-            print(f"  Total pages: {total_pages}")
-            print(f"  Base64 size: {base64_size_mb:.2f} MB")
-
-            reasons = []
-            if base64_size_mb > self.MAX_BASE64_SIZE_MB:
-                reasons.append(f"size > {self.MAX_BASE64_SIZE_MB}MB")
-            if total_pages > self.MAX_PAGES_PER_CHUNK:
-                reasons.append(f"pages > {self.MAX_PAGES_PER_CHUNK}")
-
-            needs_chunking = len(reasons) > 0
-            reason = " and ".join(reasons) if reasons else None
-
-            return needs_chunking, total_pages, base64_size_mb, reason
-
-        except Exception as e:
-            print(f"Error analyzing PDF: {e}")
-            return False, 0, 0, None
-
-    def find_optimal_chunk_size(self, reader, start_page, max_pages):
-        """Binary search for max pages fitting in size limit."""
-        left, right = 1, max_pages
-        best_pages = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            end_page = start_page + mid
-
-            writer = PdfWriter()
-            for page_num in range(start_page, end_page):
-                writer.add_page(reader.pages[page_num])
-
-            pdf_output = BytesIO()
-            writer.write(pdf_output)
-            pdf_output.seek(0)
-
-            chunk_base64 = base64.b64encode(pdf_output.read()).decode('utf-8')
-            chunk_size_mb = len(chunk_base64) / (1024 * 1024)
-
-            if chunk_size_mb <= self.MAX_BASE64_SIZE_MB:
-                best_pages = mid
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        return best_pages
-
-    def create_pdf_chunk(self, reader, start_page, num_pages):
-        """Create a PDF chunk with specified pages in memory."""
-        try:
-            end_page = start_page + num_pages
-            writer = PdfWriter()
-
-            for page_num in range(start_page, end_page):
-                writer.add_page(reader.pages[page_num])
-
-            pdf_output = BytesIO()
-            writer.write(pdf_output)
-            pdf_output.seek(0)
-
-            chunk_content = pdf_output.read()
-            chunk_base64 = base64.b64encode(chunk_content).decode('utf-8')
-            chunk_size_mb = len(chunk_base64) / (1024 * 1024)
-
-            return chunk_content, chunk_size_mb
-
-        except Exception as e:
-            print(f"Error creating PDF chunk: {e}")
-            return None, 0
-
-    def chunk_pdf(self, pdf_path: Path):
-        """Split PDF into chunks in memory."""
-        try:
-            with open(pdf_path, 'rb') as f:
-                pdf_content = f.read()
-
-            reader = PdfReader(BytesIO(pdf_content))
-            total_pages = len(reader.pages)
-
-            chunks = []
-            current_page = 0
-            chunk_num = 1
-
-            print(f"\nChunking PDF in memory...")
-
-            while current_page < total_pages:
-                remaining_pages = total_pages - current_page
-                max_pages_for_this_chunk = min(remaining_pages, self.MAX_PAGES_PER_CHUNK)
-
-                optimal_pages = self.find_optimal_chunk_size(reader, current_page, max_pages_for_this_chunk)
-
-                chunk_bytes, chunk_size_mb = self.create_pdf_chunk(
-                    reader, current_page, optimal_pages
-                )
-
-                if chunk_bytes:
-                    chunk_info = {
-                        'num': chunk_num,
-                        'start_page': current_page + 1,
-                        'end_page': current_page + optimal_pages,
-                        'num_pages': optimal_pages,
-                        'size_mb': chunk_size_mb
-                    }
-                    print(f"  Chunk {chunk_num}: pages {chunk_info['start_page']}-{chunk_info['end_page']} ({optimal_pages} pages), size {chunk_size_mb:.2f} MB")
-                    chunks.append((chunk_bytes, chunk_info))
-                    current_page += optimal_pages
-                    chunk_num += 1
-                else:
-                    print(f"  Failed to create chunk {chunk_num}")
-                    break
-
-            print(f"Created {len(chunks)} chunks total\n")
-            return chunks
-
-        except Exception as e:
-            print(f"Error chunking PDF: {e}")
-            return []
-
-
-def run_ocr(client: LLMClient, pdf_path: Path) -> str:
-    """
-    Step 3: Full OCR of the PDF with chunking as needed.
-
-    Returns:
-        Full markdown text
+    The IIIS router hangs on image-dense inline PDFs (one FigStep page is
+    4.9 MB), so extraction runs locally on CPU instead of uploading chunks
+    to a remote multimodal model. Only the PDF text layer is read; figure
+    bitmaps are not OCR'd. For FigStep this is sufficient because every
+    algorithm element and prompt template lives in the text layer, and the
+    typographic images are outputs the attack renders itself.
     """
     print(f"\n{'='*60}")
-    print("STEP 3: Full OCR")
+    print("STEP 3: Local text extraction (PyMuPDF)")
     print(f"{'='*60}")
 
-    pdf_processor = PDFProcessor()
-    needs_chunking, total_pages, size_mb, reason = pdf_processor.analyze_pdf(pdf_path)
-
-    ocr_prompt = (
-        "Extract all text from this PDF document and format it in markdown. "
-        "Preserve the document structure, headings, tables, and formatting. "
-        "IMPORTANT: Preserve all footnotes and endnotes. Where a footnote contains a URL, "
-        "inline the URL directly in the text at the reference point as a markdown link "
-        "(e.g. [text](https://...)). Do not drop footnote content or URLs."
-    )
-
-    if needs_chunking:
-        print(f"  ⚠ Chunking required: {reason}")
-
-        chunks = pdf_processor.chunk_pdf(pdf_path)
-        if not chunks:
-            raise RuntimeError("Failed to chunk PDF")
-
-        print(f"Processing {len(chunks)} chunks...")
-        all_markdown = []
-
-        for chunk_bytes, chunk_info in chunks:
-            print(f"\n  Chunk {chunk_info['num']}/{len(chunks)}:")
-            chunk_markdown = client.chat_with_pdf(chunk_bytes, ocr_prompt)
-            if chunk_markdown:
-                all_markdown.append(chunk_markdown)
-                print(f"  ✓ {len(chunk_markdown)} chars")
+    doc = pymupdf.open(str(pdf_path))
+    try:
+        page_count = doc.page_count
+        parts = []
+        for index in range(page_count):
+            text = (doc[index].get_text("text") or "").strip()
+            if text:
+                parts.append(f"<!-- page {index + 1} -->\n\n{text}")
             else:
-                print(f"  ⚠ Warning: Failed to process chunk {chunk_info['num']}")
+                parts.append(f"<!-- page {index + 1}: no text layer (image-only page) -->")
+    finally:
+        doc.close()
 
-        if not all_markdown:
-            raise RuntimeError("Failed to extract text from any chunks")
+    markdown = "\n\n".join(parts)
+    if not markdown.strip():
+        raise RuntimeError(f"No extractable text layer in {pdf_path}")
 
-        return "\n\n".join(all_markdown)
-
-    else:
-        print(f"  ✓ No chunking needed - processing entire PDF")
-
-        with open(pdf_path, 'rb') as f:
-            pdf_bytes = f.read()
-
-        full_markdown = client.chat_with_pdf(pdf_bytes, ocr_prompt)
-        if not full_markdown:
-            raise RuntimeError("Failed to extract text from PDF")
-
-        print(f"  ✓ {len(full_markdown)} chars extracted")
-        return full_markdown
+    print(f"  ✓ {len(markdown)} chars from {page_count} pages")
+    return markdown
 
 
 # ---------------------------------------------------------------------------
@@ -539,9 +474,9 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Pipeline:
-  1. Fetch arXiv abstract → LLM triage (is it a black-box text-only jailbreak?)
-  2. Download PDF, send first 8 pages → LLM deep triage (CPU-runnable?)
-  3. Full OCR with chunking unless --skip-ocr is set
+  1. Fetch arXiv abstract → LLM triage (is it a supported black-box jailbreak?)
+  2. Download PDF, send first 3 pages → LLM deep triage (CPU-runnable?)
+  3. Local text-layer extraction (PyMuPDF) unless --skip-ocr is set
 
 Examples:
   python paper_preprocessor.py --arxiv-id "2505.10066"
@@ -549,7 +484,7 @@ Examples:
   python paper_preprocessor.py --arxiv-id "2505.10066" --skip-triage
   python paper_preprocessor.py --local-pdf "path/to/paper.pdf" --skip-abstract-triage
 
-Note: Requires WENWEN_API_KEY unless both --skip-triage and --skip-ocr are set.
+Note: Requires IIIS_API_KEY unless --skip-triage is set (OCR is local, no key needed).
         """
     )
 
@@ -608,7 +543,7 @@ if __name__ == "__main__":
         print(f"Processing arXiv PDF: {pdf_id}")
 
     # Initialize LLM client only when triage or OCR will call the model.
-    client = LLMClient(model=args.model) if (not args.skip_triage or not args.skip_ocr) else None
+    client = LLMClient(model=args.model) if not args.skip_triage else None
 
     # --- Step 1: Abstract triage ---
     if arxiv_id and not args.skip_triage and not args.skip_abstract_triage:
@@ -656,7 +591,7 @@ if __name__ == "__main__":
             print(f"PDF copied to {pdf_filename}")
             pdf_path = pdf_filename
 
-    # --- Step 2: Deep triage (first 8 pages) ---
+    # --- Step 2: Deep triage (first 3 pages) ---
     if not args.skip_triage:
         try:
             assert client is not None
@@ -672,10 +607,9 @@ if __name__ == "__main__":
         print(f"✓ Skipping OCR; all files saved in directory: {output_dir}")
         exit(0)
 
-    # --- Step 3: Full OCR ---
+    # --- Step 3: Local text extraction (no model call) ---
     try:
-        assert client is not None
-        full_markdown = run_ocr(client, pdf_path)
+        full_markdown = run_ocr(pdf_path)
     except RuntimeError as e:
         print(f"\n✗ OCR failed: {e}")
         exit(1)

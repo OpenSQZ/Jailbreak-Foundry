@@ -4,8 +4,10 @@ JBFoundry: An integrated framework for automatic LLM jailbreak techniques.
 
 __version__ = "0.3.0"
 
+from .utils.env import load_dotenv
 from .utils.logging import configure_logging
 
+load_dotenv()
 configure_logging()
 
 # Monkey-patch ThreadPoolExecutor to automatically propagate contextvars
@@ -29,6 +31,14 @@ from .llm.base import BaseLLM
 from .attacks import BaseAttack, list_attacks
 from .defenses import BaseDefense, register_defense, get_defense, DefenseFactory, list_defenses
 from .evaluation import JailbreakEvaluator
+from .payloads import (
+    AttackPayload,
+    ImageAsset,
+    ImagePart,
+    Message,
+    ModelCapabilities,
+    TextPart,
+)
 
 # Import domain-specific evaluators if available
 try:
@@ -55,11 +65,23 @@ __all__ = [
     # LLM interfaces
     "BaseLLM",
     # Attacks
-    "BaseAttack", "list_attacks",
+    "BaseAttack",
+    "list_attacks",
     # Defenses
-    "BaseDefense", "register_defense", "get_defense", "DefenseFactory", "list_defenses",
+    "BaseDefense",
+    "register_defense",
+    "get_defense",
+    "DefenseFactory",
+    "list_defenses",
     # Evaluation
     "JailbreakEvaluator",
+    # Multimodal payloads
+    "AttackPayload",
+    "ImageAsset",
+    "ImagePart",
+    "Message",
+    "ModelCapabilities",
+    "TextPart",
 ]
 
 # Add domain-specific evaluators to exports if available

@@ -23,6 +23,7 @@ datasets = "^2.14.0"
 huggingface-hub = ">=0.19.0"
 numpy = "^1.24.0"
 pandas = "^2.0.0"
+pillow = ">=10.0.0"
 
 # NLP Utilities - Core for prompt processing
 nltk = "^3.8.1"
@@ -80,7 +81,10 @@ line_length = 100
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
-addopts = "-v --cov=src/jbfoundry --cov-report=term-missing"
+# Coverage is opt-in so that `pytest` works without the dev dependency group
+# installed. For coverage, run:
+#   pytest --cov=src/jbfoundry --cov-report=term-missing
+addopts = "-v"
 
 [tool.ruff]
 line-length = 100

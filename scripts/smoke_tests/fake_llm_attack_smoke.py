@@ -31,6 +31,15 @@ if str(REPO_ROOT / "src") not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Imported after the sys.path setup above so the harness also works from a
+# checkout where jbfoundry is not installed.
+from jbfoundry.llm.base import BaseLLM  # noqa: E402
+from jbfoundry.payloads import (  # noqa: E402
+    AttackPayload,
+    ModelCapabilities,
+    serialize_attack_prompt,
+)
+
 
 @dataclass
 class ResponseRule:
@@ -92,8 +101,13 @@ class ResponseScript:
         return ResponseSelection(default_response(context), "default", 1, 1, is_default=True)
 
 
-class FakeLLM:
-    """Small LLMLiteLLM stand-in used by the smoke harness."""
+class FakeLLM(BaseLLM):
+    """Small LLMLiteLLM stand-in used by the smoke harness.
+
+    Inheriting from BaseLLM is deliberate: it makes the runner's expectations
+    structural, so a newly added abstract method fails loudly at instantiation
+    instead of surfacing as an AttributeError partway through a smoke run.
+    """
 
     def __init__(self, script: ResponseScript, **config: Any):
         self.script = script
@@ -107,6 +121,22 @@ class FakeLLM:
         self.real_provider = config.get("provider", "fake-provider")
         self.model_identifier = f"{self.provider}/{self.model_name}"
         self.query_count = 0
+
+    def get_token_count(self, text: str) -> int:
+        return max(1, len(text) // 4)
+
+    def get_capabilities(self) -> ModelCapabilities:
+        supports_vision = self.config.get("supports_vision")
+        if supports_vision is None:
+            try:
+                import litellm
+
+                supports_vision = bool(litellm.supports_vision(model=self.model_name))
+            except Exception:
+                supports_vision = False
+
+        modalities = {"text"} | ({"image"} if supports_vision else set())
+        return ModelCapabilities(input_modalities=frozenset(modalities), source="fake")
 
     def query(self, prompts: Any, **kwargs: Any) -> Any:
         from jbfoundry.llm.litellm import RichResponse, RichResponseList
@@ -157,6 +187,10 @@ def serialize_prompt(prompts: Any) -> str:
             else:
                 parts.append(str(item))
         return "\n".join(parts)
+    if isinstance(prompts, AttackPayload):
+        # Reuse the framework serializer so image redaction and manifest shape
+        # stay in sync instead of depending on the dataclass repr.
+        return json.dumps(serialize_attack_prompt(prompts), sort_keys=True, default=str)
     return str(prompts)
 
 

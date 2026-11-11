@@ -8,9 +8,12 @@ echo "Setting up JBFoundry environment variables..."
 # Aliyun API Key
 export DASHSCOPE_API_KEY=""
 
-# Wenwen API Key
-export WENWEN_API_KEY=""
-export WENWEN_CODEX_API_KEY=""
+# IIIS LLM Router API Key (primary; replaces the retired Wenwen endpoint)
+# Get your key from: https://router.ai.iiis.co:9443/ui (SSO login -> Virtual Keys)
+export IIIS_API_KEY=""
+# Deprecated aliases kept for backward compatibility (point at IIIS router):
+export WENWEN_API_KEY="$IIIS_API_KEY"
+export WENWEN_CODEX_API_KEY="$IIIS_API_KEY"
 
 # Infini 无问芯穹 API Key
 export INFINI_API_KEY=""

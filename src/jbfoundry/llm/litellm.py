@@ -26,6 +26,13 @@ except ImportError:
 from ..llm.base import BaseLLM
 from ..defenses import DefenseFactory
 from ..cost_tracker import CostTracker
+from ..payloads import (
+    AttackPayload,
+    ImagePart,
+    ModelCapabilities,
+    TextPart,
+    infer_prompt_modalities,
+)
 
 
 class RichResponse(str):
@@ -131,9 +138,12 @@ class LLMLiteLLM(BaseLLM):
             llm_api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
             llm_api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         elif provider == "wenwen":
+            # DEPRECATED: wenwen endpoint (api.wenwen-ai.com) is retired.
+            # Alias to the IIIS router so existing YAMLs/configs keep working.
+            # Prefer provider: iiis with a prefixed model (e.g. jwg/gpt-4o).
             llm_provider = "openai"
-            llm_api_key = api_key or os.getenv("WENWEN_API_KEY")
-            llm_api_base = "https://api.wenwen-ai.com/v1"
+            llm_api_key = api_key or os.getenv("IIIS_API_KEY") or os.getenv("WENWEN_API_KEY")
+            llm_api_base = "https://router.ai.iiis.co:9443/v1"
         elif provider == "infini":
             llm_provider = "openai"
             llm_api_key = api_key or os.getenv("INFINI_API_KEY")
@@ -148,13 +158,31 @@ class LLMLiteLLM(BaseLLM):
         elif provider == "local-llama3-8b":
             llm_provider = "openai"
             llm_api_base = "http://10.210.22.10:30253/v1"
+        elif provider == "local-deepseek-abliterated":
+            # Self-hosted abliterated (refusal-removed) DeepSeek-V4-Flash endpoint,
+            # OpenAI-compatible. Used as the default judge so evaluation is not
+            # biased by a safety-aligned model refusing to score harmful content.
+            llm_provider = "openai"
+            llm_api_key = api_key or os.getenv("ABLITERATED_API_KEY")
+            llm_api_base = "http://10.210.22.164:31987/v1"
+        elif provider == "local-glm-abliterated":
+            # Self-hosted abliterated (refusal-removed) GLM-5.3-Flash endpoint,
+            # OpenAI-compatible, intranet VPN only. Current default judge.
+            llm_provider = "openai"
+            llm_api_key = api_key or os.getenv("GLM_ABLITERATED_API_KEY")
+            llm_api_base = "http://10.210.22.176:30460/v1"
         elif provider == "bedrock":
             llm_api_key = api_key or os.getenv("AWS_BEARER_TOKEN_BEDROCK")
         elif provider == "vertex_ai":
             llm_api_key = api_key or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         
+        # Avoid double-prefix in the identifier too (see __init__).
+        if model_name.startswith(f"{provider}/"):
+            identifier = model_name
+        else:
+            identifier = f"{provider}/{model_name}"
         return cls(
-            model_identifier=f"{provider}/{model_name}",
+            model_identifier=identifier,
             model_name=model_name,
             provider=llm_provider,
             real_provider=provider,
@@ -175,6 +203,9 @@ class LLMLiteLLM(BaseLLM):
         max_tokens: Optional[int] = None,
         max_retries: int = 5,
         log_dir: Optional[str] = "logs",
+        supports_vision: Optional[bool] = None,
+        max_image_bytes: int = 20 * 1024 * 1024,
+        request_timeout: Optional[float] = None,
         **kwargs
     ):
         """
@@ -189,6 +220,11 @@ class LLMLiteLLM(BaseLLM):
             max_tokens: Maximum number of tokens to generate
             max_retries: Maximum number of retries on API failures (default: 5)
             log_dir: Directory to store logs
+            supports_vision: Explicit vision capability override. When omitted,
+                LiteLLM model metadata is used.
+            max_image_bytes: Maximum local image size accepted for transport.
+            request_timeout: Per-request timeout in seconds. Defaults to
+                JBF_REQUEST_TIMEOUT (180s).
             **kwargs: Additional parameters to pass to LiteLLM
         """
         super().__init__(model_name, **kwargs)
@@ -199,11 +235,43 @@ class LLMLiteLLM(BaseLLM):
         self.max_tokens = max_tokens
         self.max_retries = max_retries
         self.log_dir = log_dir
+        self.max_image_bytes = max_image_bytes
+        self.request_timeout = request_timeout or float(os.environ.get("JBF_REQUEST_TIMEOUT", "180"))
+        if self.max_image_bytes <= 0:
+            raise ValueError("max_image_bytes must be greater than zero")
 
         if provider:
-            self.model_name = f"{provider}/{model_name}"
+            # Avoid double-prefixing: configs often already include the router
+            # prefix (e.g. "infi/deepseek-v4-pro"), and prepending provider
+            # again ("iiis/infi/deepseek-v4-pro") makes the IIIS router reject
+            # the request with "no healthy deployments".
+            if model_name.startswith(f"{provider}/"):
+                self.model_name = model_name
+            else:
+                self.model_name = f"{provider}/{model_name}"
         else:
             raise ValueError(f"Provider not provided.")
+
+        if supports_vision is None:
+            try:
+                vision_enabled = bool(litellm.supports_vision(model=self.model_name))
+                capability_source = "litellm"
+            except Exception as exc:
+                logger.debug("Could not detect vision support for %s: %s", self.model_name, exc)
+                vision_enabled = False
+                capability_source = "default"
+        else:
+            vision_enabled = supports_vision
+            capability_source = "configuration"
+
+        input_modalities = {"text"}
+        if vision_enabled:
+            input_modalities.add("image")
+        self._capabilities = ModelCapabilities(
+            input_modalities=frozenset(input_modalities),
+            output_modalities=frozenset({"text"}),
+            source=capability_source,
+        )
         
         # Set up API key and base url if provided
         self.api_key = api_key
@@ -223,19 +291,34 @@ class LLMLiteLLM(BaseLLM):
         self,
         event: str,
         query_id: str,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],
         elapsed: Optional[float] = None,
         usage: Optional[Dict[str, int]] = None,
         error: Optional[Exception] = None,
     ) -> None:
         """Log compact live-call progress without prompt text or credentials."""
-        prompt_chars = sum(len(str(message.get("content", ""))) for message in messages)
+        prompt_chars = 0
+        image_count = 0
+        for message in messages:
+            content = message.get("content", "")
+            if isinstance(content, str):
+                prompt_chars += len(content)
+            elif isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") in {"text", "input_text"}:
+                        prompt_chars += len(str(part.get("text", "")))
+                    elif part.get("type") in {"image", "image_url", "input_image"}:
+                        image_count += 1
         parts = [
             f"LLM {event}",
             f"model={self.model_identifier}",
             f"messages={len(messages)}",
             f"prompt_chars={prompt_chars}",
         ]
+        if image_count:
+            parts.append(f"images={image_count}")
         if elapsed is not None:
             parts.append(f"elapsed={elapsed:.1f}s")
         if usage:
@@ -245,12 +328,37 @@ class LLMLiteLLM(BaseLLM):
         logger.info(" | ".join(parts))
 
     def _redact_completion_kwargs(self, completion_kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        redacted = completion_kwargs.copy()
+        redacted = self._sanitize_for_log(completion_kwargs)
         if redacted.get("api_key"):
             redacted["api_key"] = "***REDACTED***"
         return redacted
+
+    def _sanitize_for_log(self, value: Any) -> Any:
+        """Recursively remove image bytes and remote image URLs from log payloads."""
+        if isinstance(value, str):
+            if value.startswith("data:image/"):
+                mime_type = value.split(";", 1)[0].replace("data:", "")
+                return f"[{mime_type} data omitted]"
+            return value
+        if isinstance(value, list):
+            return [self._sanitize_for_log(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._sanitize_for_log(item) for item in value]
+        if isinstance(value, dict):
+            if value.get("type") in {"image", "image_url", "input_image"}:
+                sanitized = {
+                    key: self._sanitize_for_log(item)
+                    for key, item in value.items()
+                    if key not in {"image_url", "url", "data", "image"}
+                }
+                sanitized["image"] = "[image reference omitted]"
+                return sanitized
+            return {key: self._sanitize_for_log(item) for key, item in value.items()}
+        if isinstance(value, bytes):
+            return f"[{len(value)} image bytes omitted]"
+        return value
     
-    def _make_messages(self, prompt: str) -> List[Dict[str, str]]:
+    def _make_messages(self, prompt: str) -> List[Dict[str, Any]]:
         """
         Format a prompt as a list of messages for chat-based models.
         
@@ -302,22 +410,74 @@ class LLMLiteLLM(BaseLLM):
             {"role": "user", "content": prompt},
         ]
 
+    def _payload_to_messages(self, payload: AttackPayload) -> List[Dict[str, Any]]:
+        """Convert a canonical payload to LiteLLM content blocks."""
+        self._require_input_modalities(payload.modalities)
+        messages: List[Dict[str, Any]] = []
+
+        for message in payload.messages:
+            content = []
+            for part in message.parts:
+                if isinstance(part, TextPart):
+                    content.append({"type": "text", "text": part.text})
+                    continue
+
+                if not isinstance(part, ImagePart):
+                    raise TypeError(f"Unsupported payload part: {type(part).__name__}")
+
+                asset = part.image
+                image_url = (
+                    asset.source
+                    if asset.is_remote
+                    else asset.to_data_url(max_bytes=self.max_image_bytes)
+                )
+                image_block: Dict[str, Any] = {"url": image_url}
+                if asset.detail:
+                    image_block["detail"] = asset.detail
+                content.append({"type": "image_url", "image_url": image_block})
+
+            messages.append({"role": message.role, "content": content})
+
+        return messages
+
+    def _require_input_modalities(self, modalities) -> None:
+        unsupported = set(modalities) - set(self._capabilities.input_modalities)
+        if unsupported:
+            raise ValueError(
+                f"Model '{self.model_identifier}' does not support required input modalities: "
+                + ", ".join(sorted(unsupported))
+                + ". Select a vision-capable model or set supports_vision explicitly "
+                "for a compatible custom endpoint."
+            )
+
+    def get_capabilities(self) -> ModelCapabilities:
+        return self._capabilities
+
     def _normalize_prompts(
         self,
-        prompts: Union[str, List[str], List[Dict[str, str]]],
+        prompts: Union[
+            str,
+            AttackPayload,
+            List[str],
+            List[AttackPayload],
+            List[Dict[str, Any]],
+        ],
     ) -> Tuple[bool, List[Any], bool]:
         """
         Normalize user input into (single_input, prompts_list, is_preformatted_messages).
 
         "Preformatted messages" means a list of dicts with {"role", "content"} keys.
         """
-        if isinstance(prompts, str):
+        if isinstance(prompts, (str, AttackPayload)):
             return True, [prompts], False
         
         if isinstance(prompts, list) and prompts:
             # Check if all items are dicts with "role" and "content" keys
             if all(isinstance(m, dict) and "role" in m and "content" in m for m in prompts):
                 return True, [prompts], True
+
+            if all(isinstance(prompt, AttackPayload) for prompt in prompts):
+                return False, prompts, False
 
         return False, prompts, False
 
@@ -337,6 +497,8 @@ class LLMLiteLLM(BaseLLM):
             llm=self,
             cost_tracker=cost_tracker,
         )
+        for prompt in prompts_list:
+            defense_obj.validate_modalities(infer_prompt_modalities(prompt))
         defended_prompts = [
             defense_obj.apply(p, behavior=behavior, defense=defense, phase=phase) for p in prompts_list
         ]
@@ -351,13 +513,17 @@ class LLMLiteLLM(BaseLLM):
         with open(path, "w") as f:
             json.dump(payload, f, indent=2)
 
-    def _build_completion_kwargs(self, messages: List[Dict[str, str]], **kwargs) -> Dict[str, Any]:
+    def _build_completion_kwargs(self, messages: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         completion_kwargs: Dict[str, Any] = {
             "model": self.model_name,
             "messages": messages,
             "temperature": kwargs.get("temperature", self.temperature),
             "api_key": self.api_key or "sk-dummy-key-for-local-endpoint",
             "api_base": self.api_base,
+            # Per-request timeout so a hung/stalled upstream connection raises and is
+            # picked up by the retry/backoff loop instead of blocking forever. Kept
+            # generous enough to not clip legitimately slow reasoning completions.
+            "timeout": kwargs.get("timeout", self.request_timeout),
         }
 
         # Add optional parameters only if provided.
@@ -436,7 +602,13 @@ class LLMLiteLLM(BaseLLM):
     
     def query(
         self,
-        prompts: Union[str, List[str], List[Dict[str, str]]],
+        prompts: Union[
+            str,
+            AttackPayload,
+            List[str],
+            List[AttackPayload],
+            List[Dict[str, Any]],
+        ],
         behavior: Optional[str] = None,
         defense: Optional[str] = None,
         phase: Optional[str] = None,
@@ -482,10 +654,14 @@ class LLMLiteLLM(BaseLLM):
             try:
                 # Format prompt as messages
                 # If it's already a pre-formatted messages list, use it directly
-                if is_preformatted_messages:
+                if isinstance(prompt, AttackPayload):
+                    messages = self._payload_to_messages(prompt)
+                elif is_preformatted_messages:
                     messages = prompt  # prompt is already a messages list
                 else:
                     messages = self._make_messages(prompt)
+
+                self._require_input_modalities(infer_prompt_modalities(messages))
                 
                 query_id = self._next_query_id()
                 
@@ -496,7 +672,7 @@ class LLMLiteLLM(BaseLLM):
                         log_path,
                         {
                             "model": self.model_name,
-                            "messages": messages,
+                            "messages": self._sanitize_for_log(messages),
                             "behavior": behavior,
                             "defense": defense,
                             "phase": phase,
@@ -507,11 +683,26 @@ class LLMLiteLLM(BaseLLM):
                 query_started_at = time.monotonic()
                 self._log_query_progress("start", query_id, messages)
                 completion_kwargs = self._build_completion_kwargs(messages, **kwargs)
+                logger.debug(
+                    "LiteLLM request (API key and image data redacted):\n%s",
+                    json.dumps(
+                        self._redact_completion_kwargs(completion_kwargs),
+                        indent=2,
+                        default=str,
+                    ),
+                )
                 response = self._completion_with_retries(completion_kwargs)
                 elapsed = time.monotonic() - query_started_at
                 response_text = response.choices[0].message.content
-                    
                 reasoning_content = getattr(response.choices[0].message, "reasoning_content", "")
+                temporary_response = {"content": response_text}
+                if reasoning_content:
+                    temporary_response["reasoning_content"] = reasoning_content
+                logger.debug(
+                    "LiteLLM response:\n%s",
+                    json.dumps(temporary_response, indent=2, default=str),
+                )
+
                 reasoning_tokens = (
                     getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
                     or (self.get_token_count(reasoning_content) if reasoning_content else 0)

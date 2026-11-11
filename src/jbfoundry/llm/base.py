@@ -3,9 +3,18 @@ Base LLM interface for JBFoundry.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Union, Any
+from typing import Any, Dict, List, Optional, Union
 
-LLMPrompt = Union[str, List[str], List[Dict[str, str]]]
+from ..payloads import AttackPayload, ModelCapabilities
+
+LLMPrompt = Union[
+    str,
+    AttackPayload,
+    List[str],
+    List[AttackPayload],
+    List[Dict[str, Any]],
+]
+
 
 class BaseLLM(ABC):
     """
@@ -29,14 +38,21 @@ class BaseLLM(ABC):
         self.last_query = None
     
     @abstractmethod
-    def query(self, prompts: LLMPrompt, behavior: Optional[str] = None,
-              defense: Optional[str] = None, phase: Optional[str] = None, **kwargs) -> Union[str, List[str]]:
+    def query(
+        self,
+        prompts: LLMPrompt,
+        behavior: Optional[str] = None,
+        defense: Optional[str] = None,
+        phase: Optional[str] = None,
+        **kwargs,
+    ) -> Union[str, List[str]]:
         """
         Query the model with a prompt, list of prompts, or preformatted chat messages.
         
         Args:
-            prompts: Prompt(s) to send to the model. A preformatted chat
-                message list must use {"role": "...", "content": "..."} items.
+            prompts: Prompt(s) to send to the model. This may be an
+                ``AttackPayload`` or a preformatted chat message list using
+                {"role": "...", "content": "..."} items.
             behavior: Behavior context for logging and evaluation
             defense: Defense to apply (if any)
             phase: Phase of querying (e.g., "test", "optimization")
@@ -83,6 +99,10 @@ class BaseLLM(ABC):
             Parsed response text
         """
         return str(response)
+
+    def get_capabilities(self) -> ModelCapabilities:
+        """Return model capabilities. Base adapters are text-only by default."""
+        return ModelCapabilities()
     
     def get_model_info(self) -> Dict[str, Any]:
         """
@@ -94,4 +114,5 @@ class BaseLLM(ABC):
         return {
             "model_name": self.model_name,
             "model_type": self.__class__.__name__,
+            "capabilities": self.get_capabilities().to_dict(),
         }

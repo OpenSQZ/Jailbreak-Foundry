@@ -184,7 +184,7 @@ For every algorithmic component in the paper, verify:
 
 5. **External Dependencies**
    - Model selection matches paper (e.g., GPT-4, Claude)
-   - **IMPORTANT**: Provider should be the natural model-family provider unless the paper/reference explicitly requires another one: GPT/OpenAI models use `openai`; Claude models use `anthropic`. Flag deployment-specific provider guesses such as `wenwen`, `iiis`, `infini`, or `aliyun` when they are not paper-required.
+   - **IMPORTANT**: The default provider in this repo is the IIIS LiteLLM router (`provider: iiis`) with a prefixed model channel (e.g. `iiis/qwen3-vl-30b-a3b-instruct-fp8-sqz1`, `iiis/deepseek-v4-flash-0731-sqz1`, `ora/gpt-5.6`); bare model names like `gpt-4o` do not exist on the router. Do NOT flag `iiis` as a wrong choice — it is the supported default. The victim should default to the open-source vision channel `iiis/qwen3-vl-30b-a3b-instruct-fp8-sqz1`; flag it if the victim defaults to a closed-source proxy channel such as `jwg/*` or `aws/*`. Also flag a provider when it points at a key the environment does not have (e.g. `provider: openai` with no `OPENAI_API_KEY`) or when the paper explicitly requires a different real API.
    - API calls align with methodology
    - Sampling strategies match specs
 

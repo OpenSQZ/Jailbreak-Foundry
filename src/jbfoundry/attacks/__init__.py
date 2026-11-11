@@ -34,8 +34,8 @@ class BaseAttack(ABC):
             **kwargs: Additional parameters
             
         Returns:
-            The jailbroken prompt as either a string or preformatted chat
-            messages.
+            The jailbroken prompt as a string, preformatted chat messages, or
+            a provider-neutral text/image ``AttackPayload``.
         """
         pass
     

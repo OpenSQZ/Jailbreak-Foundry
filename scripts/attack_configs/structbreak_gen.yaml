@@ -1,0 +1,41 @@
+attack_name: "structbreak_gen"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: true
+max_workers: 1
+attempts_per_query: 1
+attempts_success_threshold: 1
+
+victim_model:
+  model: "iiis/qwen3-vl-30b-a3b-instruct-fp8-sqz1"
+  provider: "iiis"
+  api_key: null
+  api_base: null
+  supports_vision: true
+  request_timeout: 600
+
+eval_model:
+  model: "huihui-glm-5.3-flash"
+  provider: "local-glm-abliterated"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  graph_builder_model:
+    model: "iiis/deepseek-v4-flash-0731-sqz1"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  judge_model:
+    model: "ora/gpt-5.6"
+    provider: "iiis"
+    api_key: null
+    api_base: null
+  max_refinement_steps: 3
+  enable_quality_gate: false
+  quality_gate_attempts_per_iter: 1
+  benign_prompt_mode: "contest"
+  render_backend: "mermaid_cli"
+  render_scale: 2.0
+  category_strategy: "heuristic_keyword"

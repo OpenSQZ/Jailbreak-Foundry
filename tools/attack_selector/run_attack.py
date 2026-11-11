@@ -12,6 +12,7 @@ Examples:
 
 import os
 import sys
+import json
 import yaml
 import subprocess
 import argparse
@@ -107,6 +108,10 @@ def build_universal_attack_command(attack_key: str, attack_name: str, args: argp
             cmd.extend([f"--{param_name}", args.eval_model])
         elif param_name == "eval_provider" and args.eval_provider:
             cmd.extend([f"--{param_name}", args.eval_provider])
+        elif isinstance(param_value, (dict, list)):
+            # dict/list params must be JSON so the CLI's object parser can read them;
+            # str() would emit Python repr with single quotes, which is not valid JSON.
+            cmd.extend([f"--{param_name}", json.dumps(param_value)])
         else:
             cmd.extend([f"--{param_name}", str(param_value)])
     

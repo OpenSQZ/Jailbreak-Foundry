@@ -6,10 +6,12 @@ attacks:
       eval_provider: openai
       max_attack_rounds: 3
       max_adjustment_rounds: 5
-      assist_model: gpt-4o-mini
-      assist_provider: openai
-      judge_model: gpt-4o
-      judge_provider: openai
+      assist_model:
+        model: gpt-4o-mini
+        provider: openai
+      judge_model:
+        model: gpt-4o
+        provider: openai
       temperature: 1.0
   aim:
     attack_name: aim_gen
@@ -27,8 +29,9 @@ attacks:
       attempts-per-query: 1
       attempts-success-threshold: 1
       attack_method: k4
-      rewrite_model: gpt-4o
-      rewrite_provider: openai
+      rewrite_model:
+        model: gpt-4o
+        provider: openai
       target_max_tokens: 300
       use_target_for_rewrite: 'false'
       clean_conversation: 'false'
@@ -81,12 +84,12 @@ attacks:
       eval_model: gpt-4o
       eval_provider: openai
       rounds: 5
-      attack_model: gpt-4o-mini
-      attack_provider: openai
-      judge_model: gpt-4o
-      judge_provider: openai
-      target_model: gpt-4o-mini
-      target_provider: openai
+      attack_model:
+        model: gpt-4o-mini
+        provider: openai
+      judge_model:
+        model: gpt-4o
+        provider: openai
       temperature: 0.3
       scenario: pd
       attempts-per-query: 1
@@ -96,7 +99,9 @@ attacks:
     default_params:
       eval_model: gpt-4o
       eval_provider: openai
-      attacker_model: gpt-4o
+      attacker_model:
+        model: gpt-4o
+        provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
   hpm:
@@ -121,7 +126,9 @@ attacks:
       eval_provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
-      isa-helper: openai/gpt-4o
+      isa-helper:
+        model: gpt-4o
+        provider: openai
       isa-shift: question
   jailcon_cvt:
     attack_name: jailcon_gen
@@ -151,8 +158,12 @@ attacks:
       eval_model: gpt-4o
       eval_provider: openai
       experience_path: attacks_paper_info/2508.19292/JailExpert/experience/experiences_examples.json
-      embedding_model: text-embedding-3-small
-      attack_model: gpt-3.5-turbo
+      embedding_model:
+        model: text-embedding-3-small
+        provider: openai
+      attack_model:
+        model: gpt-3.5-turbo
+        provider: openai
       n_clusters: 10
       top_k: 1
       scalar_weight: 0.1
@@ -170,12 +181,15 @@ attacks:
       decay_factor: 0.99
       reset_factor: 0.1
       temperature: 1.0
-      attacker_model: gpt-4o-mini
-      attacker_provider: openai
-      target_model: gpt-4o-mini
-      target_provider: openai
-      evaluator_model: gpt-4o-mini
-      evaluator_provider: openai
+      attacker_model:
+        model: gpt-4o-mini
+        provider: openai
+      target_model:
+        model: gpt-4o-mini
+        provider: openai
+      evaluator_model:
+        model: gpt-4o-mini
+        provider: openai
   mousetrap:
     attack_name: mousetrap_gen
     default_params:
@@ -204,17 +218,20 @@ attacks:
       n_streams: 10
       n_iterations: 3
       keep_last_n: 4
-      attack_model: gpt-4o-mini
-      attack_provider: openai
+      attack_model:
+        model: gpt-4o-mini
+        provider: openai
       attack_temperature: 1.0
       attack_top_p: 0.9
       attack_max_tokens: 500
-      target_model: gpt-3.5-turbo
-      target_provider: openai
+      target_model:
+        model: gpt-3.5-turbo
+        provider: openai
       target_temperature: 0.0
       target_max_tokens: 150
-      judge_model: gpt-4o-mini
-      judge_provider: openai
+      judge_model:
+        model: gpt-4o-mini
+        provider: openai
       judge_temperature: 0.0
       judge_max_tokens: 10
       max_attack_attempts: 5
@@ -230,8 +247,9 @@ attacks:
     default_params:
       eval_model: gpt-4o
       eval_provider: openai
-      reformulation_model: gpt-3.5-turbo
-      reformulation_provider: openai
+      reformulation_model:
+        model: gpt-3.5-turbo
+        provider: openai
       reformulation_temperature: 1.0
       reformulation_max_tokens: 150
       n_restarts: 20
@@ -264,14 +282,18 @@ attacks:
       attempts-per-query: 1
       attempts-success-threshold: 1
       puzzle_type: anagram
-      clue_model: gpt-4o
+      clue_model:
+        model: gpt-4o
+        provider: openai
   queryattack:
     attack_name: queryattack_gen
     default_params:
       eval_model: gpt-4o
       eval_provider: openai
       query_language: SQL
-      extraction_model: gpt-4-1106-preview
+      extraction_model:
+        model: gpt-4-1106-preview
+        provider: openai
       temperature: 0.0
   renellm:
     attack_name: renellm_gen
@@ -279,10 +301,12 @@ attacks:
       eval_model: gpt-4o
       eval_provider: openai
       max_iterations: 20
-      rewrite_model: gpt-3.5-turbo
-      rewrite_provider: openai
-      judge_model: gpt-3.5-turbo
-      judge_provider: openai
+      rewrite_model:
+        model: gpt-3.5-turbo
+        provider: openai
+      judge_model:
+        model: gpt-3.5-turbo
+        provider: openai
       rewrite_temperature: 0.5
   ra_dri:
     attack_name: response_attack_gen
@@ -290,8 +314,9 @@ attacks:
       eval_model: gpt-4o
       eval_provider: openai
       attack_type: dri
-      auxiliary_model: gpt-4o
-      auxiliary_provider: openai
+      auxiliary_model:
+        model: gpt-4o
+        provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
   ra_sri:
@@ -300,8 +325,9 @@ attacks:
       eval_model: gpt-4o
       eval_provider: openai
       attack_type: sri
-      auxiliary_model: gpt-4o
-      auxiliary_provider: openai
+      auxiliary_model:
+        model: gpt-4o
+        provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
   rts:
@@ -309,7 +335,9 @@ attacks:
     default_params:
       eval_model: gpt-4o
       eval_provider: openai
-      attack_model: qwen3-14b
+      attack_model:
+        model: qwen3-14b
+        provider: openai
       num_rewrites: 5
       attempts-per-query: 1
       attempts-success-threshold: 1
@@ -322,8 +350,12 @@ attacks:
       sata_granularity: mw
       sata_num_selections: 10
       sata_temperature: 0.3
-      sata_attack_model: gpt-3.5-turbo-1106
-      sata_wiki_model: gpt-4o
+      sata_attack_model:
+        model: gpt-3.5-turbo-1106
+        provider: openai
+      sata_wiki_model:
+        model: gpt-4o
+        provider: openai
   sata_mlm:
     attack_name: sata_gen
     default_params:
@@ -333,8 +365,12 @@ attacks:
       sata_granularity: mw
       sata_num_selections: 10
       sata_temperature: 0.3
-      sata_attack_model: gpt-3.5-turbo-1106
-      sata_wiki_model: gpt-4o
+      sata_attack_model:
+        model: gpt-3.5-turbo-1106
+        provider: openai
+      sata_wiki_model:
+        model: gpt-4o
+        provider: openai
   scp:
     attack_name: scp_gen
     default_params:
@@ -342,8 +378,9 @@ attacks:
       eval_provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
-      attacker-model: gpt-3.5-turbo
-      attacker-provider: openai
+      attacker-model:
+        model: gpt-3.5-turbo
+        provider: openai
       benign-retries: 3
   seqar:
     attack_name: seqar_gen
@@ -361,10 +398,15 @@ attacks:
       branching_factor: 4
       depth: 10
       keep_last_n: 3
-      attacker_model: gpt-4
-      evaluator_model: gpt-3.5-turbo
-      target_model: gpt-4o
-      target_provider: openai
+      attacker_model:
+        model: gpt-4
+        provider: openai
+      evaluator_model:
+        model: gpt-3.5-turbo
+        provider: openai
+      target_model:
+        model: gpt-4o
+        provider: openai
   tombraider:
     attack_name: tombraider_gen
     default_params:
@@ -377,12 +419,15 @@ attacks:
       eval_provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
-      attack_model: gpt-4o
-      attack_provider: openai
-      helper_model: gpt-4o
-      helper_provider: openai
-      judge_model: gpt-4o
-      judge_provider: openai
+      attack_model:
+        model: gpt-4o
+        provider: openai
+      helper_model:
+        model: gpt-4o
+        provider: openai
+      judge_model:
+        model: gpt-4o
+        provider: openai
       n_iterations: 5
       attack_temperature: 1.0
       judge_temperature: 0.0
@@ -393,8 +438,9 @@ attacks:
       eval_provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
-      attacker_model: gemini-2.5-flash
-      attacker_provider: vertex_ai
+      attacker_model:
+        model: gemini-2.5-flash
+        provider: vertex_ai
       transform_type: Caesar
   wordgame:
     attack_name: wordgame_gen
@@ -403,8 +449,9 @@ attacks:
       eval_provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
-      attacker-model: gpt-3.5-turbo
-      attacker-provider: openai
+      attacker-model:
+        model: gpt-3.5-turbo
+        provider: openai
       num-hints: 5
       use-wordgame-plus: 'false'
   wordgame_plus:
@@ -414,7 +461,8 @@ attacks:
       eval_provider: openai
       attempts-per-query: 1
       attempts-success-threshold: 1
-      attacker-model: gpt-3.5-turbo
-      attacker-provider: openai
+      attacker-model:
+        model: gpt-3.5-turbo
+        provider: openai
       num-hints: 5
       use-wordgame-plus: 'true'

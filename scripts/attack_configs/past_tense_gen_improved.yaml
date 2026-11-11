@@ -1,0 +1,30 @@
+attack_name: "past_tense_gen_improved"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: true
+max_workers: 1
+attempts_per_query: 3
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "llama-3-70b"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  helper_model:
+    model: "gpt-3.5-turbo"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  temperature: 1.0
+  mode: "past"
+  max_tokens: 150

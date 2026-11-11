@@ -21,7 +21,10 @@ from pathlib import Path
 # Add parent directory to path to allow 'agents' to be a package
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from agents.utils.paper_preprocessor import _load_dotenv
 from agents.workflows.attack import PaperToAttackWorkflow, AttackWorkflowConfig
+
+_load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def main() -> None:
@@ -33,17 +36,19 @@ def main() -> None:
 Examples:
   %(prog)s 2501.01830
   %(prog)s 2501.01830 --max-loops 5
-  %(prog)s 2501.01830 --attack-model gpt-5.5
+  %(prog)s 2501.01830 --attack-model gpt-5.6-sol-high
 
 Environment Variables:
   MAX_LOOPS              Maximum number of iterations (default: 5)
   PAPER_SOURCE           Paper source for planning: pdf or ocr (default: pdf)
-  PLANNER_AGENT          Agent backend for planning (default: codex)
-  ATTACK_AGENT           Agent backend for attack implementation (default: codex)
-  AUDIT_AGENT            Agent backend for auditing (default: codex)
-  ATTACK_MODEL           Model for attack implementation (default: gpt-5.5)
-  PLANNER_MODEL          Model for implementation planning (default: gpt-5.5)
-  AUDIT_MODEL            Model for auditing (default: gpt-5.5)
+  PLANNER_AGENT          Agent backend for planning (default: cursor)
+  ATTACK_AGENT           Agent backend for attack implementation (default: cursor)
+  AUDIT_AGENT            Agent backend for auditing (default: cursor)
+  ATTACK_MODEL           Model for attack implementation (default: gpt-5.3-codex-high)
+  PLANNER_MODEL          Model for implementation planning (default: gpt-5.3-codex-high)
+  AUDIT_MODEL            Model for auditing (default: gpt-5.3-codex-high)
+  CURSOR_API_KEY         Cursor CLI auth (read from .env if not exported)
+  CURSOR_AGENT_BIN       Path to Cursor CLI binary (default: cursor-agent)
   CLAUDE_CODE_BIN        Path to Claude Code binary (default: claude)
   CLAUDE_CODE_FLAGS      Additional flags for Claude Code CLI
   CODEX_BIN              Path to Codex binary (default: codex)
@@ -65,38 +70,38 @@ Environment Variables:
 
     parser.add_argument(
         "--planner-agent",
-        default=os.environ.get("PLANNER_AGENT", "codex"),
-        help="Agent backend for planning (default: codex)"
+        default=os.environ.get("PLANNER_AGENT", "cursor"),
+        help="Agent backend for planning (default: cursor)"
     )
 
     parser.add_argument(
         "--attack-agent",
-        default=os.environ.get("ATTACK_AGENT", "codex"),
-        help="Agent backend for attack implementation (default: codex)"
+        default=os.environ.get("ATTACK_AGENT", "cursor"),
+        help="Agent backend for attack implementation (default: cursor)"
     )
 
     parser.add_argument(
         "--audit-agent",
-        default=os.environ.get("AUDIT_AGENT", "codex"),
-        help="Agent backend for auditing (default: codex)"
+        default=os.environ.get("AUDIT_AGENT", "cursor"),
+        help="Agent backend for auditing (default: cursor)"
     )
 
     parser.add_argument(
         "--planner-model",
-        default=os.environ.get("PLANNER_MODEL", "gpt-5.5"),
-        help="Model for implementation planning (default: gpt-5.5)"
+        default=os.environ.get("PLANNER_MODEL", "gpt-5.3-codex-high"),
+        help="Model for implementation planning (default: gpt-5.3-codex-high)"
     )
-    
+
     parser.add_argument(
         "--attack-model",
-        default=os.environ.get("ATTACK_MODEL", "gpt-5.5"),
-        help="Model for attack implementation (default: gpt-5.5)"
+        default=os.environ.get("ATTACK_MODEL", "gpt-5.3-codex-high"),
+        help="Model for attack implementation (default: gpt-5.3-codex-high)"
     )
 
     parser.add_argument(
         "--audit-model",
-        default=os.environ.get("AUDIT_MODEL", "gpt-5.5"),
-        help="Model for auditing (default: gpt-5.5)"
+        default=os.environ.get("AUDIT_MODEL", "gpt-5.3-codex-high"),
+        help="Model for auditing (default: gpt-5.3-codex-high)"
     )
     parser.add_argument(
         "--paper-source",

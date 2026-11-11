@@ -4,14 +4,61 @@ Configuration guide for supported LLM providers in Jailbreak Foundry.
 
 ## Supported Providers
 
+Every provider below is a branch of `LLMLiteLLM.from_config`, which resolves the
+credential environment variable and, where the endpoint is fixed, the API base.
+
+### Direct providers
+
 | Provider | Environment Variable | Notes |
 |----------|---------------------|-------|
-| `openai` | `OPENAI_API_KEY` | OpenAI models (GPT-4, GPT-3.5, etc.) |
+| `openai` | `OPENAI_API_KEY`, optional `OPENAI_API_BASE` | OpenAI models (GPT-4, GPT-3.5, etc.) |
 | `anthropic` | `ANTHROPIC_API_KEY` | Claude models |
 | `azure` | `AZURE_API_KEY`, `AZURE_API_BASE` | Azure OpenAI Service |
 | `aliyun` | `DASHSCOPE_API_KEY` | Aliyun/Qwen models |
-| `bedrock` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | AWS Bedrock |
+| `bedrock` | `AWS_BEARER_TOKEN_BEDROCK` | AWS Bedrock |
 | `vertex_ai` | `GOOGLE_APPLICATION_CREDENTIALS` | Google Vertex AI / Gemini |
+
+### OpenAI-compatible aggregators
+
+These speak the OpenAI protocol, so `from_config` reports `openai` to LiteLLM
+while `real_provider` keeps the aggregator name for result provenance. The API
+base is fixed in code; `--api_base` is ignored for them.
+
+| Provider | Environment Variable | Endpoint |
+|----------|---------------------|----------|
+| `iiis` | `IIIS_API_KEY` | `https://router.ai.iiis.co:9443/v1` |
+| `infini` | `INFINI_API_KEY` | `https://cloud.infini-ai.com/maas/v1` |
+
+`iiis` is the IIIS LLM Router (LiteLLM proxy) and is the **primary** provider in
+this repo. It serves 1000+ models under **prefixed** channel names such as
+`jwg/gpt-4o`, `ora/gpt-5.6`, `aws/claude-sonnet-4-6`. Bare names like `gpt-4o` do
+**not** exist on the router — always use a prefixed channel. Get a key at
+<https://router.ai.iiis.co:9443/ui> (SSO -> Virtual Keys).
+
+`wenwen` is **deprecated**: the `api.wenwen-ai.com` endpoint is retired. The
+`wenwen` provider is kept only as a backward-compat alias that routes to the IIIS
+router and reads `IIIS_API_KEY` (falling back to `WENWEN_API_KEY`). New configs
+should use `provider: iiis` with a prefixed model name.
+
+Aggregators serve models under bare names such as `gemini-2.5-flash-lite`, which
+LiteLLM's metadata tables often do not recognise. Two consequences:
+
+- Per-token pricing resolves to zero, so use token counts rather than currency
+  amounts when reporting cost for these providers.
+- Vision capability autodetection fails closed. Set `supports_vision: true`
+  explicitly in the attack config for any multimodal run. See
+  [MULTIMODAL.md](MULTIMODAL.md).
+
+### Preconfigured internal endpoints
+
+| Provider | Endpoint | Model id |
+|----------|----------|----------|
+| `local-llama2-7b` | `http://10.210.22.10:30254/v1` | `llama2-7b-chat` |
+| `local-llama3-8b` | `http://10.210.22.10:30253/v1` | `llama3-8b-instruct` |
+
+Both are text-only and require no credential; requests fall back to a placeholder
+key. Attacks that emit images are rejected by the runner's modality check before
+any request is sent.
 
 ## Basic Usage
 
@@ -60,6 +107,21 @@ python src/jbfoundry/runners/universal_attack.py \
     --provider aliyun \
     --attack_name tap_gen
 ```
+
+### Aggregators (IIIS router)
+
+```bash
+export IIIS_API_KEY="sk-..."
+
+python -m jbfoundry.runners.universal_attack \
+    --model jwg/gpt-4o \
+    --provider iiis \
+    --attack_name aim_gen
+```
+
+Do not pass `--api_base`; the endpoint is fixed in `from_config`. Use a prefixed
+model name (`jwg/gpt-4o`, `ora/gpt-5.6`, `aws/claude-sonnet-4-6`, ...); bare names
+are not served by the router.
 
 ### AWS Bedrock
 

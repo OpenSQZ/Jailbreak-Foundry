@@ -11,6 +11,8 @@ import logging
 import re
 from abc import ABC, abstractmethod
 
+from ..payloads import ImageAsset
+
 # Domain-specific loaders will be imported after base classes are defined
 WMDP_AVAILABLE = False
 GSM8K_AVAILABLE = False
@@ -28,6 +30,11 @@ class JailbreakDataset:
     def __len__(self) -> int:
         """Get the number of behaviors in the dataset."""
         return len(self.behaviors)
+
+    @property
+    def modalities(self):
+        """Modalities supplied by each standard jailbreak record."""
+        return frozenset({"text"})
     
     def __getitem__(self, idx: int) -> Dict[str, str]:
         """Get a specific behavior by index."""
@@ -67,6 +74,70 @@ class JailbreakDataset:
             goals=[self.goals[i] for i in indices],
             targets=[self.targets[i] for i in indices],
             categories=[self.categories[i] for i in indices]
+        )
+
+
+@dataclass
+class MultimodalJailbreakDataset(JailbreakDataset):
+    """A jailbreak dataset whose records may include one or more images."""
+
+    media: List[List[ImageAsset]]
+    metadata: List[Dict[str, Any]]
+
+    def __post_init__(self) -> None:
+        expected = len(self.behaviors)
+        field_lengths = {
+            "goals": len(self.goals),
+            "targets": len(self.targets),
+            "categories": len(self.categories),
+            "media": len(self.media),
+            "metadata": len(self.metadata),
+        }
+        mismatched = {name: length for name, length in field_lengths.items() if length != expected}
+        if mismatched:
+            raise ValueError(
+                f"Multimodal dataset fields must all have {expected} records; got {mismatched}"
+            )
+
+    @property
+    def modalities(self):
+        modalities = {"text"}
+        if self.media and all(record_media for record_media in self.media):
+            modalities.add("image")
+        return frozenset(modalities)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        item = super().__getitem__(idx)
+        item.update({"media": self.media[idx], "metadata": self.metadata[idx]})
+        return item
+
+    def as_dataframe(self) -> pd.DataFrame:
+        dataframe = super().as_dataframe()
+        dataframe["media"] = [
+            [asset.to_dict() for asset in record_media] for record_media in self.media
+        ]
+        dataframe["metadata"] = self.metadata
+        return dataframe
+
+    def filter_by_category(self, category: str) -> "MultimodalJailbreakDataset":
+        indices = [i for i, value in enumerate(self.categories) if value == category]
+        return self._select(indices)
+
+    def sample(self, n: int, seed: Optional[int] = None) -> "MultimodalJailbreakDataset":
+        import random
+
+        random.seed(seed)
+        indices = random.sample(range(len(self)), min(n, len(self)))
+        return self._select(indices)
+
+    def _select(self, indices: List[int]) -> "MultimodalJailbreakDataset":
+        return MultimodalJailbreakDataset(
+            behaviors=[self.behaviors[i] for i in indices],
+            goals=[self.goals[i] for i in indices],
+            targets=[self.targets[i] for i in indices],
+            categories=[self.categories[i] for i in indices],
+            media=[self.media[i] for i in indices],
+            metadata=[self.metadata[i] for i in indices],
         )
 
 
@@ -141,7 +212,11 @@ class JailbreakDatasetLoader(ABC):
         self.params = kwargs
     
     @abstractmethod
-    def load(self, dataset_name: str, **kwargs) -> Union[JailbreakDataset, WMDPDataset, GSM8KDataset]:
+    def load(
+        self, dataset_name: str, **kwargs
+    ) -> Union[
+        JailbreakDataset, MultimodalJailbreakDataset, WMDPDataset, GSM8KDataset
+    ]:
         """
         Load a dataset.
         
@@ -214,7 +289,11 @@ def _get_preset_loader(preset_name: str) -> tuple:
     return _PRESET_LOADERS[preset_name]
 
 
-def load_dataset(dataset_name: str = "jbb-harmful", path: Optional[str] = None) -> Union[JailbreakDataset, WMDPDataset, GSM8KDataset]:
+def load_dataset(
+    dataset_name: str = "jbb-harmful", path: Optional[str] = None
+) -> Union[
+    JailbreakDataset, MultimodalJailbreakDataset, WMDPDataset, GSM8KDataset
+]:
     """
     Load a jailbreak dataset from a file or Hugging Face.
     

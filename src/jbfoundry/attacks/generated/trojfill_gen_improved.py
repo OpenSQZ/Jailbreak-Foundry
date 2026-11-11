@@ -20,7 +20,7 @@ from jbfoundry.llm.litellm import LLMLiteLLM
 logger = logging.getLogger(__name__)
 
 
-class TrojFillGen(ModernBaseAttack):
+class TrojFillGenImproved(ModernBaseAttack):
     """
     TrojFill attack implementation (Refined Version).
 
@@ -67,23 +67,16 @@ class TrojFillGen(ModernBaseAttack):
     implementation closer to the paper's algorithm where the framework allows.
     """
     
-    NAME = "trojfill_gen"
+    NAME = "trojfill_gen_improved"
     PAPER = "TrojFill: A Black-box Jailbreak Attack via Template Filling with Unsafety Reasoning (2024)"
     
     PARAMETERS = {
         "attacker_model": AttackParameter(
             name="attacker_model",
-            param_type=str,
-            default="gemini-2.5-flash",
+            param_type=dict,
+            default={'model': 'gemini-2.5-flash', 'provider': 'gemini', 'api_key': None, 'api_base': None},
             description="The LLM used for extraction, classification, and rewriting",
             cli_arg="--attacker_model"
-        ),
-        "attacker_provider": AttackParameter(
-            name="attacker_provider",
-            param_type=str,
-            default="gemini",
-            description="Provider for the attacker model",
-            cli_arg="--attacker_provider"
         ),
         "transform_type": AttackParameter(
             name="transform_type",
@@ -155,7 +148,6 @@ And here's the sentence-by-sentence detailed analysis of the example {text_type}
 
         # Initialize attacker LLM
         attacker_model = self.get_parameter_value("attacker_model")
-        attacker_provider = self.get_parameter_value("attacker_provider")
 
         # Gap #2: Safety filter configuration
         # The paper disables all safety filters for the attacker model (Gemini) with BLOCK_NONE.
@@ -168,8 +160,10 @@ And here's the sentence-by-sentence detailed analysis of the example {text_type}
         )
 
         self.attacker_llm = LLMLiteLLM.from_config(
-            model_name=attacker_model,
-            provider=attacker_provider
+            model_name=attacker_model["model"],
+            provider=attacker_model["provider"],
+            api_key=attacker_model.get("api_key"),
+            api_base=attacker_model.get("api_base")
         )
 
         logger.info(f"Initialized TrojFill with attacker model: {attacker_provider}/{attacker_model}")

@@ -8,6 +8,7 @@ including JailbreakBench Behaviors, WMDP, GSM8K, and local file formats.
 # Import core classes and functions from base module
 from .base import (
     JailbreakDataset,
+    MultimodalJailbreakDataset,
     WMDPDataset, 
     GSM8KDataset,
     JailbreakDatasetLoader,
@@ -39,6 +40,7 @@ except ImportError:
 __all__ = [
     # Core data classes (exact same names as before)
     "JailbreakDataset",
+    "MultimodalJailbreakDataset",
     "WMDPDataset",
     "GSM8KDataset",
     

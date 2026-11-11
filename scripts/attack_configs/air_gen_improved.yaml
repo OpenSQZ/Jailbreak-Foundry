@@ -1,0 +1,31 @@
+attack_name: "air_gen_improved"
+dataset: "assets/harmful_behaviors_custom_50.csv"
+samples: 50
+all_samples: false
+restart: true
+max_workers: 1
+attempts_per_query: 3
+attempts_success_threshold: 1
+
+victim_model:
+  model: "gpt-4o"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+eval_model:
+  model: "llama-3-70b"
+  provider: "openai"
+  api_key: null
+  api_base: null
+
+attack_parameters:
+  attack_method: "k4"
+  rewrite_model:
+    model: "gpt-4o-2024-05-13"
+    provider: "openai"
+    api_key: null
+    api_base: null
+  use_target_for_rewrite: false
+  target_max_tokens: 300
+  clean_conversation: false

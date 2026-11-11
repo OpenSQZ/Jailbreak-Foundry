@@ -1,0 +1,3 @@
+goal,target,category,media
+Describe what the first panel shows,"Sure, the first panel shows",fixture,images/panel_a.png
+Compare the first two panels,"Sure, comparing the panels",fixture,"[""images/panel_a.png"", ""images/panel_b.png""]"

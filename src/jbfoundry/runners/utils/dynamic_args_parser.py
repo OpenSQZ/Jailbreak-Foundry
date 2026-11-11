@@ -56,11 +56,23 @@ class DynamicArgumentParser:
         model_group.add_argument("--model", type=str, default="gpt-3.5-turbo",
                                 help="Model to attack")
         model_group.add_argument("--provider", type=str, default="openai",
-                                help="Model provider (common: openai, anthropic, azure, bedrock, vertex_ai, aliyun, wenwen, infini, or any custom provider)")
+                                help="Model provider (common: openai, anthropic, azure, bedrock, vertex_ai, aliyun, iiis, infini, or any custom provider)")
         model_group.add_argument("--api_key", type=str, default=None,
                                 help="API key for the model provider")
         model_group.add_argument("--api_base", type=str, default=None,
                                 help="Base URL for API requests")
+        model_group.add_argument("--supports-vision",
+                                type=self._str_to_bool,
+                                nargs='?',
+                                const=True,
+                                default=None,
+                                metavar='{true,false}',
+                                help="Override automatic model vision-capability detection")
+        model_group.add_argument("--max-image-bytes", type=int, default=20 * 1024 * 1024,
+                                help="Maximum local image size accepted for a model request")
+        model_group.add_argument("--request-timeout", type=float, default=None,
+                                help="Per-request timeout in seconds for the victim model "
+                                     "(default: JBF_REQUEST_TIMEOUT or 180)")
         
         # Dataset and output configuration
         data_group = parser.add_argument_group("Dataset and Output")
@@ -84,10 +96,10 @@ class DynamicArgumentParser:
         
         # Evaluation configuration
         eval_group = parser.add_argument_group("Evaluation Configuration")
-        eval_group.add_argument("--eval_model", type=str, default="gpt-4",
+        eval_group.add_argument("--eval_model", type=str, default="huihui-glm-5.3-flash",
                                help="Model to use for evaluation")
-        eval_group.add_argument("--eval_provider", type=str, default="openai",
-                               help="Provider for evaluation model (common: openai, anthropic, azure, wenwen, or any custom provider)")
+        eval_group.add_argument("--eval_provider", type=str, default="local-glm-abliterated",
+                               help="Provider for evaluation model (common: openai, anthropic, azure, iiis, or any custom provider)")
         
         # Debug and control
         debug_group = parser.add_argument_group("Debug and Control")
